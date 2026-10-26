@@ -19,3 +19,5 @@ PC 브라우저(Chrome, Edge 권장)에서 마우스로 하는 걸 기준으로 
 
 - [three.js](https://threejs.org) r128 (MIT)
 - 효과음 일부: [Kenney](https://www.kenney.nl) Sci-Fi Sounds · Impact Sounds (CC0)
+
+방문자 수 집계를 위해 Google Analytics를 사용합니다.
