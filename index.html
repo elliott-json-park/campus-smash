@@ -4,6 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>캠퍼스 부수기 V7</title>
+<meta name="description" content="가상의 모 대학교 캠퍼스를 하늘에서 조준해 무너뜨리는 브라우저 게임. 설치 없이 링크만 열면 바로 할 수 있습니다.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="캠퍼스 부수기">
+<meta property="og:title" content="캠퍼스 부수기">
+<meta property="og:description" content="운석, 낙뢰, 조준 파괴포로 캠퍼스를 무너뜨려 보세요. 설치 없이 바로 플레이.">
+<meta property="og:url" content="https://elliott-json-park.github.io/campus-smash/">
+<meta property="og:image" content="https://elliott-json-park.github.io/campus-smash/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-LGPJSZ6K5Q"></script>
 <script>
@@ -52,6 +62,7 @@
   #stats { position: absolute; left: 16px; top: 16px; padding: 6px; display: flex; gap: 6px; align-items: center; pointer-events: auto; }
   #stats .ic { border: 0; background: rgba(255,255,255,.1); color: #fff; width: 32px; height: 32px; border-radius: 9px; cursor: pointer; font-size: 15px; display: grid; place-items: center; padding: 0; }
   #stats .ic:hover { background: rgba(255,255,255,.2); }
+  #stats .ic.txt { width: auto; padding: 0 10px; font: inherit; font-size: 13px; font-weight: 800; white-space: nowrap; }
   #feed { position: absolute; right: 16px; top: 16px; width: 300px; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
   #feed div { background: var(--glass); color: #fff; font-size: 13px; padding: 7px 12px; border-radius: 10px; border: 1px solid var(--line); animation: fin .25s ease-out; transition: opacity .5s, transform .5s; }
   #feed div.out { opacity: 0; transform: translateX(20px); }
@@ -182,8 +193,24 @@
   .weap div { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 60px; }
   .weap b { font-size: 22px; }
   .keys { font-size: 11.5px; opacity: .68; margin-top: 16px; line-height: 1.8; }
+
+  /* photo preview */
+  .card.shotCard { position: relative; width: auto; max-width: min(860px, 100%); padding: 12px; }
+  #shotImg { display: block; max-width: 100%; max-height: calc(100vh - 150px); max-height: calc(100dvh - 150px); margin: 0 auto; border-radius: 9px; -webkit-touch-callout: default; pointer-events: auto; }
+  #shotClose { position: absolute; right: 20px; top: 20px; width: 40px; height: 40px; border: 0; border-radius: 50%; background: rgba(10,12,18,.72); color: #fff; font-size: 16px; cursor: pointer; }
+  #shotTip { min-height: 18px; margin: 10px 0 9px; font-size: 12.5px; opacity: .8; }
+  .shotCard .btn { padding: 12px 8px; font-size: 14px; white-space: nowrap; }
+  .shotCard .btn[hidden] { display: none; }
+  @media (max-height: 520px) {
+    .card.shotCard { display: flex; gap: 12px; align-items: center; }
+    #shotImg { max-width: 62vw; max-height: calc(100vh - 56px); max-height: calc(100dvh - 56px); }
+    .shotActs { width: 170px; flex: none; }
+    .shotCard .row { flex-direction: column; gap: 7px; }
+    #shotClose { left: 20px; right: auto; }
+  }
   @media (max-width: 820px) {
     #help { display: none; }
+    #stats .ic { width: 40px; height: 40px; }
     .slot { width: 56px; height: 58px; } .slot .ic { font-size: 20px; } .slot .nm { font-size: 9px; }
     #weapons { gap: 4px; padding: 6px; }
     #feed { top: auto; bottom: 150px; width: 210px; }
@@ -212,6 +239,8 @@
   <div id="stats" class="glass">
     <button class="ic" id="muteBtn" title="소리 켜기/끄기 (M)">🔊</button>
     <button class="ic" id="helpBtn" title="조작법 접기/펼치기 (H)">?</button>
+    <button class="ic txt" id="shotBtn" title="지금 화면을 사진으로 찍기 (P)">📷 사진</button>
+    <button class="ic txt" id="shareBtn" title="친구에게 게임 링크 공유">🔗 공유</button>
   </div>
   <div id="feed"></div>
   <div id="combo"></div>
@@ -228,7 +257,7 @@
     <div><kbd>좌클릭</kbd> 발사 &nbsp;<kbd>우클릭 드래그</kbd> 시점 회전</div>
     <div>조준 파괴포: <kbd>우클릭</kbd> 한 번 = 조준경</div>
     <div><kbd>Esc</kbd> 무기 해제</div>
-    <div><kbd>R</kbd> 처음 시점 &nbsp;<kbd>M</kbd> 소리 &nbsp;<kbd>H</kbd> 이 창 접기</div>
+    <div><kbd>R</kbd> 처음 시점 &nbsp;<kbd>M</kbd> 소리 &nbsp;<kbd>P</kbd> 사진 &nbsp;<kbd>H</kbd> 이 창 접기</div>
     <div style="opacity:.55;font-size:10.5px">효과음 일부: Kenney.nl Sci-Fi · Impact Sounds (CC0)</div>
     </div>
   </div>
@@ -253,6 +282,20 @@
       <button class="btn main" id="btnStart">시작하기<small>시간 제한 없이 마음껏</small></button>
     </div>
     <div class="keys">처음엔 무기 없이 자유 시점 · 1~7 무기 선택 (다시 누르면 해제) · 좌클릭 발사 · 우클릭 드래그 시점 회전 · Ctrl+우클릭 망원 확대</div>
+  </div>
+</div>
+<div id="shot" class="screen hide">
+  <div class="card glass shotCard">
+    <img id="shotImg" alt="내가 부순 캠퍼스 사진">
+    <button id="shotClose" title="닫기 (Esc)" aria-label="닫기">✕</button>
+    <div class="shotActs">
+      <div id="shotTip"></div>
+      <div class="row">
+        <button class="btn main" id="shotSave">사진 저장</button>
+        <button class="btn" id="shotShare" hidden>사진 보내기</button>
+        <button class="btn" id="shotLink">링크 복사</button>
+      </div>
+    </div>
   </div>
 </div>
 <div id="zoomVig"></div>
@@ -5050,6 +5093,7 @@ window.addEventListener('blur', () => { leftDown = MJ.beamKey = false; exitScope
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('wheel', (e) => { if (!scope.on) return; e.preventDefault(); scope.fov = clamp(scope.fov * Math.exp(e.deltaY * 0.0015), 2.5, 30); }, { passive: false });
 window.addEventListener('keydown', (e) => {
+  if (shot.open) { if (e.code === 'Escape') closeShot(); return; }
   keys[e.code] = true;
   if (!G.playing) return;
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
@@ -5062,6 +5106,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'KeyX' && curId() === 'mj') mjRoll();
   else if (e.code === 'KeyR') tweenCam(START_P, START_T, 1.2);
   else if (e.code === 'KeyM') toggleMute();
+  else if (e.code === 'KeyP') takeShot();
   else if (e.code === 'KeyH') foldHelp();
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; if (e.code === 'KeyZ') MJ.beamKey = false; });
@@ -5099,6 +5144,98 @@ $('#helpBtn').addEventListener('click', () => foldHelp());
 $('#helpFold').addEventListener('click', () => foldHelp());
 $('#wFold').addEventListener('click', () => foldWeapons());
 try { foldHelp(!!localStorage.getItem('campusSmashHelpFold')); foldWeapons(!!localStorage.getItem('campusSmashWFold')); } catch (e) { foldWeapons(false); }
+
+// ------------------------------------------------------------------ photo and link sharing
+const SITE_URL = 'https://elliott-json-park.github.io/campus-smash/';
+const shot = { open: false, url: '', file: null };
+// the Windows/Mac share sheets offer little; on a PC the link is simply copied
+const TOUCH = matchMedia('(pointer: coarse)').matches;
+const canShareFile = (f) => TOUCH && !!navigator.canShare && navigator.canShare({ files: [f] });
+const shareText = () => G.kills ? '캠퍼스 건물 ' + G.kills + '채 무너뜨렸어! 너도 부숴봐' : '캠퍼스를 통째로 부수는 게임이야. 너도 해봐';
+function grabView() {
+  // the drawing buffer doesn't outlive this task, so render and copy back to back, at more than the adaptive live resolution
+  const pr = renderer.getPixelRatio(), rv = reticle.visible, av = arcLine.visible;
+  reticle.visible = arcLine.visible = false;
+  renderer.setPixelRatio(clamp(2048 / Math.max(innerWidth, innerHeight), pr, 2)); updPScale();
+  const c = document.createElement('canvas'); c.width = canvas.width; c.height = canvas.height;
+  const x = c.getContext('2d');
+  // the scene is never pure black, so a black centre means the copy came back empty: try once more rather than hand out a black photo
+  const copy = () => { renderer.render(scene, camera); x.drawImage(canvas, 0, 0); return x.getImageData(c.width >> 1, c.height >> 1, 1, 1).data.slice(0, 3).some(Boolean); };
+  const ok = copy() || copy();
+  reticle.visible = rv; arcLine.visible = av;
+  renderer.setPixelRatio(pr); updPScale();
+  renderer.render(scene, camera);                                       // resizing cleared the live canvas
+  return ok ? c : null;
+}
+function brandShot(c) {
+  const x = c.getContext('2d'), W = c.width, H = c.height, u = Math.min(W, H) / 100, m = 4 * u;
+  const font = (w, s) => w + ' ' + s + 'px ' + getComputedStyle(document.body).fontFamily;
+  const g = x.createLinearGradient(0, H - 30 * u, 0, H); g.addColorStop(0, 'rgba(10,12,18,0)'); g.addColorStop(1, 'rgba(10,12,18,.78)');
+  x.fillStyle = g; x.fillRect(0, H - 30 * u, W, 30 * u);
+  x.textBaseline = 'alphabetic'; x.shadowColor = 'rgba(0,0,0,.55)'; x.shadowBlur = u;
+  x.font = font(900, 7 * u); x.fillStyle = '#fff'; x.fillText('캠퍼스 ', m, H - 12.4 * u);
+  const tw = x.measureText('캠퍼스 ').width; x.fillStyle = '#ff5a1f'; x.fillText('부수기', m + tw, H - 12.4 * u);
+  x.font = font(800, 3.6 * u); x.fillStyle = '#fff'; x.fillText(G.kills ? '건물 ' + TOTAL + '채 중 ' + G.kills + '채 붕괴' : '가상의 모 대학교 서울캠퍼스', m, H - 7.6 * u);
+  x.font = font(600, 2.7 * u); x.fillStyle = 'rgba(255,255,255,.75)'; x.fillText(SITE_URL.replace(/^https:\/\/|\/$/g, ''), m, H - 3.6 * u);
+}
+function takeShot() {
+  if (shot.open) return;
+  const c = grabView();
+  if (!c) { sysFeed('사진을 찍지 못했습니다. 다시 눌러 주세요'); return; }
+  shot.open = true; brandShot(c);
+  leftDown = false; exitScope(); zoomEnd();
+  c.toBlob((blob) => {
+    if (!shot.open) return;                                             // Esc while the JPEG was still encoding
+    if (!blob) { shot.open = false; sysFeed('사진을 만들지 못했습니다'); return; }
+    shot.url = URL.createObjectURL(blob);
+    shot.file = new File([blob], 'campus-smash-' + G.kills + '.jpg', { type: 'image/jpeg' });
+    $('#shotImg').src = shot.url;
+    $('#shotShare').hidden = !canShareFile(shot.file);
+    $('#shotLink').textContent = TOUCH && navigator.share ? '링크 공유' : '링크 복사';
+    shotTip(TOUCH ? '저장이 안 되면 사진을 길게 눌러 저장하세요' : '');
+    $('#shot').classList.remove('hide');
+  }, 'image/jpeg', 0.92);
+}
+function closeShot() {
+  if (!shot.open) return;
+  shot.open = false; $('#shot').classList.add('hide');
+  URL.revokeObjectURL(shot.url); shot.file = null;
+}
+const shotTip = (t) => { $('#shotTip').textContent = t; };
+const notify = (t) => { if (shot.open) shotTip(t); else sysFeed(t); };
+function savePhoto() {
+  const a = document.createElement('a'); a.href = shot.url; a.download = shot.file.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  notify('사진을 저장했습니다');
+}
+async function sharePhoto() {
+  // the link goes in the text: several apps drop a separate url field when files are attached
+  try { await navigator.share({ files: [shot.file], title: '캠퍼스 부수기', text: shareText() + ' ' + SITE_URL }); }
+  catch (e) { if (e.name !== 'AbortError') notify('보내지 못했습니다. 사진을 저장해서 보내 주세요'); }
+}
+async function copyLink() {
+  try { await navigator.clipboard.writeText(SITE_URL); return true; } catch (e) {}
+  // in-app browsers (KakaoTalk and friends) often have no clipboard API
+  const t = document.createElement('textarea'); t.value = SITE_URL; t.style.cssText = 'position:fixed;left:0;top:0;opacity:0;user-select:text;-webkit-user-select:text';
+  document.body.appendChild(t); t.select(); t.setSelectionRange(0, SITE_URL.length);
+  let ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+  t.remove(); return ok;
+}
+async function shareLink() {
+  if (TOUCH && navigator.share) {
+    try { await navigator.share({ title: '캠퍼스 부수기', text: shareText(), url: SITE_URL }); return; }
+    catch (e) { if (e.name === 'AbortError') return; }
+  }
+  if (await copyLink()) notify('링크를 복사했습니다. 친구에게 붙여넣어 보내세요');
+  else { try { window.prompt('아래 링크를 복사해 주세요', SITE_URL); } catch (e) { notify('친구에게 이 주소를 보내세요: ' + SITE_URL); } }
+}
+$('#shotBtn').addEventListener('click', takeShot);
+$('#shareBtn').addEventListener('click', shareLink);
+$('#shotSave').addEventListener('click', savePhoto);
+$('#shotShare').addEventListener('click', sharePhoto);
+$('#shotLink').addEventListener('click', shareLink);
+$('#shotClose').addEventListener('click', closeShot);
+$('#shot').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeShot(); });
 
 controls.autoRotate = true;
 
