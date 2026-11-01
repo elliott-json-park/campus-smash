@@ -218,8 +218,30 @@
     body.hudfold #stats { padding: 3px; opacity: .75; }
     #wtip { width: max-content; max-width: calc(100vw - 24px); white-space: normal; text-align: center; line-height: 1.45; border-radius: 14px; }
   }
+  /* touch pads: 먼작귀 stick and buttons, scope buttons */
+  #mjPad, #tScope, #scPad { display: none; }
+  .tBtn { flex: none; width: 62px; height: 62px; padding: 0; display: grid; place-items: center; align-content: center; gap: 1px; border: 1px solid var(--line); border-radius: 50%; background: var(--glass); color: #fff; font: inherit; font-size: 20px; line-height: 1.1; pointer-events: auto; touch-action: none; -webkit-tap-highlight-color: transparent; }
+  .tBtn small { font-size: 10px; font-weight: 700; white-space: nowrap; }
+  .tBtn.on { background: rgba(255,90,31,.85); }
+  #mjPad { position: absolute; left: 0; right: 0; bottom: 136px; height: 0; }
+  #joy { position: absolute; left: 14px; bottom: 0; width: 112px; height: 112px; border-radius: 50%; border: 1px solid var(--line); background: rgba(16,18,24,.45); pointer-events: auto; touch-action: none; }
+  #joy i { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; margin: -24px 0 0 -24px; border-radius: 50%; background: rgba(255,255,255,.78); box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+  .tBtns { position: absolute; right: 12px; bottom: 0; display: grid; grid-template-columns: repeat(2, 62px); gap: 8px; }
+  #tScope { position: absolute; right: 14px; bottom: 136px; }
+  #scPad { position: absolute; left: 0; right: 0; bottom: 24px; justify-content: center; align-items: center; gap: 10px; }
+  #tFire { width: 84px; height: 84px; background: rgba(255,90,31,.9); }
   @media (pointer: coarse) {
     body.mjmode #mjHint { display: none; }
+    body.mjmode.mjon #mjPad { display: block; }
+    body.mjmode.mjon #feed { top: 80px; bottom: auto; }
+    body.railmode:not(.scoped) #tScope { display: grid; }
+    body.scoped #scPad { display: flex; }
+    .sc-hint { display: none; }
+  }
+  @media (pointer: coarse) and (max-height: 520px) {
+    #scPad { left: auto; right: 12px; bottom: 10px; flex-direction: column-reverse; gap: 6px; }
+    #scPad .tBtn { width: 54px; height: 54px; font-size: 17px; }
+    #scPad #tFire { width: 70px; height: 70px; }
   }
   @media (max-width: 820px) {
     #help { display: none; }
@@ -281,6 +303,22 @@
     <div><kbd>Z</kbd> 누르고 있기 = 눈 광선 &nbsp;<kbd>X</kbd> 구르기 돌진</div>
     <div><kbd>Space</kbd> 점프 엉덩방아 &nbsp;<kbd>F</kbd> 다시 소환</div>
     <div id="mjState">땅을 클릭하면 소환됩니다</div>
+  </div>
+  <div id="mjPad">
+    <div id="joy"><i></i></div>
+    <div class="tBtns">
+      <button class="tBtn" id="tBeam">👀<small>눈 광선</small></button>
+      <button class="tBtn" id="tRoll">🌀<small>구르기</small></button>
+      <button class="tBtn" id="tJump">🦘<small>점프</small></button>
+      <button class="tBtn" id="tBack">↩️<small>다시 소환</small></button>
+    </div>
+  </div>
+  <button class="tBtn" id="tScope">🔭<small>조준경</small></button>
+  <div id="scPad">
+    <button class="tBtn" id="tOff">✕<small>닫기</small></button>
+    <button class="tBtn" id="tOut">➖<small>축소</small></button>
+    <button class="tBtn" id="tIn">➕<small>확대</small></button>
+    <button class="tBtn" id="tFire">🔥<small>발사</small></button>
   </div>
 </div>
 <div id="start" class="screen">
@@ -4175,8 +4213,8 @@ const WEAPONS = [
   { id: 'grenade', name: '수류탄', icon: '💣', mode: 'semi', cd: 0.35, tip: '안전손잡이가 튕겨 나가고, 포물선으로 날아가 떨어진 자리 근처에서 터집니다' },
   { id: 'meteor', name: '운석', icon: '☄️', mode: 'semi', cd: 5, tip: '용암 균열이 빛나는 운석이 대기를 찢으며 떨어집니다 — 충격파·버섯구름·깊은 크레이터' },
   { id: 'bolt', name: '낙뢰', icon: '⚡', mode: 'semi', cd: 0.9, tip: '조준한 지점을 잠그고, 번개가 정확히 그 자리에 내리꽂힙니다' },
-  { id: 'rail', name: '조준 파괴포', icon: '🔭', mode: 'rail', cd: 2.2, tip: '우클릭 한 번 = 조준경 켜기/끄기 · 좌클릭 발사 · 우클릭 드래그는 평소처럼 시점 회전', touchTip: '누른 곳으로 광선을 쏩니다' },
-  { id: 'mj', name: '먼작귀', icon: '🐱', mode: 'mj', tip: '땅을 클릭해 소환 — WASD 걷기 · 좌클릭 연속 펀치 · Z 눈 광선 · X 구르기 돌진 · Space 엉덩방아', touchTip: '땅을 눌러 소환 · 다시 누르면 그쪽으로 펀치' }
+  { id: 'rail', name: '조준 파괴포', icon: '🔭', mode: 'rail', cd: 2.2, tip: '우클릭 한 번 = 조준경 켜기/끄기 · 좌클릭 발사 · 우클릭 드래그는 평소처럼 시점 회전', touchTip: '🔭 버튼으로 조준경 · 화면을 누르면 바로 발사' },
+  { id: 'mj', name: '먼작귀', icon: '🐱', mode: 'mj', tip: '땅을 클릭해 소환 — WASD 걷기 · 좌클릭 연속 펀치 · Z 눈 광선 · X 구르기 돌진 · Space 엉덩방아', touchTip: '땅을 눌러 소환 · 왼쪽 스틱으로 걷기(끝까지 밀면 달리기) · 화면을 누르면 그쪽으로 펀치' }
 ];
 const glowMat = (hex) => new THREE.SpriteMaterial({ map: GLOW, color: hex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
 const addMat = (hex, o) => new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity: o == null ? 1 : o, blending: THREE.AdditiveBlending, depthWrite: false });
@@ -4522,7 +4560,7 @@ function enterScope() {
   scope.yaw = Math.atan2(-d.x, -d.z); scope.pitch = Math.asin(clamp(d.y, -1, 1)); scope.fov = 12;
   scEl.mode.textContent = '조준 파괴포 조준경';
   controls.enabled = false; document.body.classList.add('scoped', 'scope-rail'); reticle.visible = arcLine.visible = false;
-  try { if (canvas.requestPointerLock) { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } } catch (e) {}
+  try { if (!TOUCH && canvas.requestPointerLock) { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } } catch (e) {}
   sfxRailCharge();
 }
 function exitScope() {
@@ -4711,7 +4749,7 @@ function dismissMJ() {
   if (!MJ.on) return;
   const c = MJ.pos.clone().add(_v.set(0, MJS, 0));
   for (let i = 0; i < 60; i++) { randDir(_v); const sp = rand(3, 12); emit(SMOKE, c.x + _v.x * MJS * 0.6, c.y + _v.y * MJS * 0.6, c.z + _v.z * MJS * 0.6, _v.x * sp, _v.y * sp, _v.z * sp, rand(1, 2), MJS * 0.3, MJS * rand(0.7, 1), 1, 1, 1, 0.75, 2, -0.5, 0, 0); }
-  MJ.on = false; MJ.root.visible = false; MJ.beamKey = false; sfxWhoosh(0.4, 0.15, 600, 2400);
+  MJ.on = false; MJ.root.visible = false; MJ.beamKey = false; joyEnd(); sfxWhoosh(0.4, 0.15, 600, 2400);
   mjHint.textContent = '땅을 클릭하면 소환됩니다';
 }
 // left click: punches alternate hands; the third in a quick row is a two-handed slam. A click during a swing is remembered.
@@ -4732,7 +4770,7 @@ function startPunch(target) {
 function mjJump() { if (!MJ.on || MJ.air || MJ.act) return; MJ.act = { k: 'crouch', t: 0, dur: 0.14 }; MJ.squash = 0.22; }
 function mjRoll() {
   if (!MJ.on || MJ.air || MJ.act || MJ.rollCd > 0) return;
-  const tg = aimP || MJ.pos.clone().add(_v.set(Math.sin(MJ.yaw) * 60, 0, Math.cos(MJ.yaw) * 60));
+  const tg = (!TOUCH && aimP) || MJ.pos.clone().add(_v.set(Math.sin(MJ.yaw) * 60, 0, Math.cos(MJ.yaw) * 60));   // on a phone: straight ahead
   const d = new V3(tg.x - MJ.pos.x, 0, tg.z - MJ.pos.z); const L = clamp(d.length(), 25, 80); d.normalize();
   MJ.act = { k: 'roll', t: 0, dir: d, dist: L, done: 0, spin: 0, dur: 0.25 + L / 46 + 0.45 }; MJ.rollCd = 1.2;
   MJ.yaw = Math.atan2(d.x, d.z); setFace('effort', MJ.act.dur); sfxVoice('wee', MJ.pos);
@@ -4759,10 +4797,10 @@ function stepMJ(dt) {
   let mvx = 0, mvz = 0;
   if (ctl && !A && !MJ.beamOn) {
     camBasis(); const fl = Math.hypot(camF.x, camF.z) || 1, fx = camF.x / fl, fz = camF.z / fl;
-    const fIn = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0), sIn = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+    const fIn = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + joy.f, sIn = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + joy.s;
     mvx = fx * fIn - fz * sIn; mvz = fz * fIn + fx * sIn;
   }
-  const ml = Math.hypot(mvx, mvz), run = keys.ShiftLeft || keys.ShiftRight, speed = run ? 34 : 20;
+  const ml = Math.hypot(mvx, mvz), run = keys.ShiftLeft || keys.ShiftRight || joy.run, speed = run ? 34 : 20;
   if (ml > 0) { mvx /= ml; mvz /= ml; MJ.yaw = angLerp(MJ.yaw, Math.atan2(mvx, mvz), Math.min(1, dt * 7)); }
   // velocity eases in and out so starts and stops have weight
   MJ.vel.x = lerp(MJ.vel.x, mvx * speed, Math.min(1, dt * 6)); MJ.vel.z = lerp(MJ.vel.z, mvz * speed, Math.min(1, dt * 6));
@@ -4953,7 +4991,7 @@ arcLine.renderOrder = 10; arcLine.frustumCulled = false; arcLine.visible = false
 function selectWeapon(i) {
   if (i === G.cur || i == null || i < 0 || i >= WEAPONS.length) i = -1;
   exitScope();
-  leftDown = false; MJ.beamKey = false;
+  leftDown = false; MJ.beamKey = false; joyEnd();
   G.cur = i; slots.forEach((s, k) => s.b.classList.toggle('sel', k === i));
   applyControlMode();
   const t = $('#wtip');
@@ -4963,6 +5001,7 @@ function selectWeapon(i) {
 }
 function setIf(el, prop, val, cache, key) { if (el && cache[key] !== val) { cache[key] = val; el.style[prop] = val; } }
 function stepHUD(dt) {
+  if (mjShown !== MJ.on) { mjShown = MJ.on; document.body.classList.toggle('mjon', MJ.on); }
   for (const w of WEAPONS) if (G.cd[w.id] > 0) G.cd[w.id] = Math.max(0, G.cd[w.id] - dt);
   WEAPONS.forEach((w, i) => {
     const s = slots[i];
@@ -5057,6 +5096,15 @@ function handleFiring(dt) {
 // input — with no weapon out the mouse belongs to the camera (OrbitControls); with one out, left = use it
 canvas.addEventListener('pointermove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.in = true; });
 window.addEventListener('pointermove', (e) => {
+  if (e.pointerType === 'touch') {
+    if (e.target !== canvas) return;                                    // a thumb on the stick or a button isn't aiming
+    mouse.x = e.clientX; mouse.y = e.clientY;
+    if (scopeDrag && e.pointerId === scopeDrag.id) {                    // the view follows the finger; movementX isn't reliable for touch
+      const k = 0.0024 * camera.fov / 45; scope.yaw += (e.clientX - scopeDrag.x) * k; scope.pitch = clamp(scope.pitch + (e.clientY - scopeDrag.y) * k, -1.45, 1.2);
+      scopeDrag.x = e.clientX; scopeDrag.y = e.clientY;
+    }
+    return;
+  }
   mouse.x = e.clientX; mouse.y = e.clientY;
   if (scope.on) { const k = 0.0024 * camera.fov / 45; scope.yaw -= (e.movementX || 0) * k; scope.pitch = clamp(scope.pitch - (e.movementY || 0) * k, -1.45, 1.2); }
 });
@@ -5069,17 +5117,19 @@ function pressFire() {
 }
 // a finger waits a moment before it fires: if a second one lands, this was a pinch and nothing should go off
 const touches = new Set();
-let touchFire = 0;
+let touchFire = 0, scopeDrag = null;
 function cancelTouchFire() { clearTimeout(touchFire); touchFire = 0; }
 function touchDown(e) {
   if (e.isPrimary) touches.clear();
   touches.add(e.pointerId);
   cancelTouchFire();
+  if (scope.on) { scopeDrag = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }   // through the scope a finger aims; the 발사 button fires
   if (touches.size > 1) { leftDown = false; return; }
   if (curId()) touchFire = setTimeout(() => { touchFire = 0; pressFire(); }, 90);
 }
 function touchUp(e, cancelled) {
-  touches.delete(e.pointerId);
+  if (scopeDrag && scopeDrag.id === e.pointerId) scopeDrag = null;
+  if (!touches.delete(e.pointerId)) return;                             // a finger on the stick or a button
   if (cancelled) { cancelTouchFire(); leftDown = false; return; }
   if (touchFire) { cancelTouchFire(); pressFire(); if (curId() === 'cannon') fireCannon(); }   // a tap quicker than the wait still counts
 }
@@ -5124,7 +5174,7 @@ window.addEventListener('pointerup', (e) => {
     if (click && G.playing && curId() === 'rail') { if (scope.on) exitScope(); else enterScope(); }
   }
 });
-window.addEventListener('blur', () => { leftDown = MJ.beamKey = false; cancelTouchFire(); touches.clear(); exitScope(); zoomEnd(); for (const k in keys) keys[k] = false; });
+window.addEventListener('blur', () => { leftDown = MJ.beamKey = false; cancelTouchFire(); touches.clear(); joyEnd(); exitScope(); zoomEnd(); for (const k in keys) keys[k] = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('wheel', (e) => { if (!scope.on) return; e.preventDefault(); scope.fov = clamp(scope.fov * Math.exp(e.deltaY * 0.0015), 2.5, 30); }, { passive: false });
 window.addEventListener('keydown', (e) => {
@@ -5154,6 +5204,7 @@ function applyControlMode() {
   const id = curId();
   document.body.classList.toggle('armed', !!id && G.playing);
   document.body.classList.toggle('mjmode', id === 'mj' && G.playing);
+  document.body.classList.toggle('railmode', id === 'rail' && G.playing);
   controls.touches.ONE = id && G.playing ? null : THREE.TOUCH.PAN;     // with a weapon out one finger aims; two still turn and zoom
   if (!G.playing) { controls.mouseButtons = MB_VIEW; return; }
   controls.mouseButtons = id ? MB_ARMED : MB_FREE;
@@ -5182,6 +5233,33 @@ $('#helpFold').addEventListener('click', () => foldHelp());
 $('#wFold').addEventListener('click', () => foldWeapons());
 $('#hudFold').addEventListener('click', () => foldHud());
 try { foldHelp(!!localStorage.getItem('campusSmashHelpFold')); foldWeapons(!!localStorage.getItem('campusSmashWFold')); foldHud(!!localStorage.getItem('campusSmashHudFold')); } catch (e) { foldWeapons(false); foldHud(false); }
+
+// ------------------------------------------------------------------ touch pads: 먼작귀 stick and buttons, scope buttons
+const joy = { f: 0, s: 0, run: false, id: null };
+const joyEl = $('#joy'), joyKnob = joyEl.firstElementChild;
+let mjShown = false;
+function joyEnd() { joy.f = joy.s = 0; joy.run = false; joy.id = null; joyKnob.style.transform = ''; }
+function joyMove(e) {
+  const b = joyEl.getBoundingClientRect(), R = b.width / 2 - 12;
+  const x = e.clientX - b.left - b.width / 2, y = e.clientY - b.top - b.height / 2, n = Math.hypot(x, y), k = Math.min(1, R / (n || 1));
+  joyKnob.style.transform = 'translate(' + (x * k).toFixed(1) + 'px,' + (y * k).toFixed(1) + 'px)';
+  const on = n > 12;                                                    // a dead zone, so a resting thumb doesn't walk
+  joy.f = on ? -y / R : 0; joy.s = on ? x / R : 0; joy.run = n > R * 0.9;
+}
+joyEl.addEventListener('pointerdown', (e) => { audioInit(); joy.id = e.pointerId; joyMove(e); });
+joyEl.addEventListener('pointermove', (e) => { if (e.pointerId === joy.id) joyMove(e); });
+for (const ev of ['pointerup', 'pointercancel']) joyEl.addEventListener(ev, (e) => { if (e.pointerId === joy.id) joyEnd(); });
+const tap = (sel, fn) => $(sel).addEventListener('pointerdown', (e) => { e.preventDefault(); audioInit(); fn(); });
+const hold = (sel, on, off) => {
+  const el = $(sel), up = () => { el.classList.remove('on'); off(); };
+  tap(sel, () => { el.classList.add('on'); on(); });
+  for (const ev of ['pointerup', 'pointercancel']) el.addEventListener(ev, up);
+};
+hold('#tBeam', () => { MJ.beamKey = true; }, () => { MJ.beamKey = false; });
+tap('#tRoll', mjRoll); tap('#tJump', mjJump); tap('#tBack', dismissMJ);
+tap('#tScope', enterScope); tap('#tOff', exitScope); tap('#tFire', fireRail);
+const scopeZoom = (f) => { scope.fov = clamp(scope.fov * f, 2.5, 30); };
+tap('#tIn', () => scopeZoom(0.7)); tap('#tOut', () => scopeZoom(1 / 0.7));
 
 // ------------------------------------------------------------------ photo and link sharing
 const SITE_URL = 'https://elliott-json-park.github.io/campus-smash/';
