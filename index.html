@@ -51,6 +51,7 @@
 
   #loading { position: fixed; inset: 0; display: none; place-items: center; background: rgba(223,228,234,.7); backdrop-filter: blur(4px); z-index: 50; }
   #loading.show { display: grid; }
+  #reloadBtn[hidden] { display: none; }
   #loading .box { background: #fff; padding: 18px 24px; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.15); font-size: 14px; font-weight: 600; display: flex; gap: 12px; align-items: center; }
   .spin { width: 18px; height: 18px; border: 3px solid rgba(255,90,31,.25); border-top-color: var(--accent); border-radius: 50%; animation: sp .8s linear infinite; }
   @keyframes sp { to { transform: rotate(360deg); } }
@@ -63,6 +64,7 @@
   #stats .ic { border: 0; background: rgba(255,255,255,.1); color: #fff; width: 32px; height: 32px; border-radius: 9px; cursor: pointer; font-size: 15px; display: grid; place-items: center; padding: 0; }
   #stats .ic:hover { background: rgba(255,255,255,.2); }
   #stats .ic.txt { width: auto; padding: 0 10px; font: inherit; font-size: 13px; font-weight: 800; white-space: nowrap; }
+  #stats #hudFold { display: none; }
   #feed { position: absolute; right: 16px; top: 16px; width: 300px; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
   #feed div { background: var(--glass); color: #fff; font-size: 13px; padding: 7px 12px; border-radius: 10px; border: 1px solid var(--line); animation: fin .25s ease-out; transition: opacity .5s, transform .5s; }
   #feed div.out { opacity: 0; transform: translateX(20px); }
@@ -208,9 +210,19 @@
     .shotCard .row { flex-direction: column; gap: 7px; }
     #shotClose { left: 20px; right: auto; }
   }
+  /* phones: the top buttons fold away behind one small toggle, which keeps its spot in the corner */
+  @media (max-width: 820px), (pointer: coarse) {
+    #stats .ic { width: 40px; height: 40px; }
+    #stats #hudFold { display: grid; font-size: 22px; }
+    body.hudfold #stats > :not(#hudFold) { display: none; }
+    body.hudfold #stats { padding: 3px; opacity: .75; }
+    #wtip { width: max-content; max-width: calc(100vw - 24px); white-space: normal; text-align: center; line-height: 1.45; border-radius: 14px; }
+  }
+  @media (pointer: coarse) {
+    body.mjmode #mjHint { display: none; }
+  }
   @media (max-width: 820px) {
     #help { display: none; }
-    #stats .ic { width: 40px; height: 40px; }
     .slot { width: 56px; height: 58px; } .slot .ic { font-size: 20px; } .slot .nm { font-size: 9px; }
     #weapons { gap: 4px; padding: 6px; }
     #feed { top: auto; bottom: 150px; width: 210px; }
@@ -237,6 +249,7 @@
 </div>
 <div id="hud">
   <div id="stats" class="glass">
+    <button class="ic" id="hudFold" title="위쪽 버튼 접기/펼치기" aria-label="위쪽 버튼 접기/펼치기">◂</button>
     <button class="ic" id="muteBtn" title="소리 켜기/끄기 (M)">🔊</button>
     <button class="ic" id="helpBtn" title="조작법 접기/펼치기 (H)">?</button>
     <button class="ic txt" id="shotBtn" title="지금 화면을 사진으로 찍기 (P)">📷 사진</button>
@@ -301,7 +314,7 @@
 <div id="zoomVig"></div>
 <div id="zoomRead" class="glass">×4.0</div>
 <div id="hint"></div>
-<div id="loading" class="show"><div class="box"><div class="spin"></div><span id="loadTxt">불러오는 중…</span></div></div>
+<div id="loading" class="show"><div class="box"><div class="spin"></div><span id="loadTxt">불러오는 중…</span><button class="btn main" id="reloadBtn" hidden>새로고침</button></div></div>
 <script>/**
  * @license
  * Copyright 2010-2021 Three.js Authors
@@ -4162,8 +4175,8 @@ const WEAPONS = [
   { id: 'grenade', name: '수류탄', icon: '💣', mode: 'semi', cd: 0.35, tip: '안전손잡이가 튕겨 나가고, 포물선으로 날아가 떨어진 자리 근처에서 터집니다' },
   { id: 'meteor', name: '운석', icon: '☄️', mode: 'semi', cd: 5, tip: '용암 균열이 빛나는 운석이 대기를 찢으며 떨어집니다 — 충격파·버섯구름·깊은 크레이터' },
   { id: 'bolt', name: '낙뢰', icon: '⚡', mode: 'semi', cd: 0.9, tip: '조준한 지점을 잠그고, 번개가 정확히 그 자리에 내리꽂힙니다' },
-  { id: 'rail', name: '조준 파괴포', icon: '🔭', mode: 'rail', cd: 2.2, tip: '우클릭 한 번 = 조준경 켜기/끄기 · 좌클릭 발사 · 우클릭 드래그는 평소처럼 시점 회전' },
-  { id: 'mj', name: '먼작귀', icon: '🐱', mode: 'mj', tip: '땅을 클릭해 소환 — WASD 걷기 · 좌클릭 연속 펀치 · Z 눈 광선 · X 구르기 돌진 · Space 엉덩방아' }
+  { id: 'rail', name: '조준 파괴포', icon: '🔭', mode: 'rail', cd: 2.2, tip: '우클릭 한 번 = 조준경 켜기/끄기 · 좌클릭 발사 · 우클릭 드래그는 평소처럼 시점 회전', touchTip: '누른 곳으로 광선을 쏩니다' },
+  { id: 'mj', name: '먼작귀', icon: '🐱', mode: 'mj', tip: '땅을 클릭해 소환 — WASD 걷기 · 좌클릭 연속 펀치 · Z 눈 광선 · X 구르기 돌진 · Space 엉덩방아', touchTip: '땅을 눌러 소환 · 다시 누르면 그쪽으로 펀치' }
 ];
 const glowMat = (hex) => new THREE.SpriteMaterial({ map: GLOW, color: hex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
 const addMat = (hex, o) => new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity: o == null ? 1 : o, blending: THREE.AdditiveBlending, depthWrite: false });
@@ -4944,8 +4957,8 @@ function selectWeapon(i) {
   G.cur = i; slots.forEach((s, k) => s.b.classList.toggle('sel', k === i));
   applyControlMode();
   const t = $('#wtip');
-  if (i >= 0) { const w = WEAPONS[i]; reticleMat.color.set(w.id === 'mj' ? 0xff6fb0 : w.id === 'bolt' ? 0x9fc8ff : 0xff5a1f); t.textContent = w.icon + ' ' + w.name + ' — ' + w.tip; }
-  else { reticle.visible = arcLine.visible = false; t.textContent = '🖐 자유 시점 — 좌클릭 드래그 회전 · 우클릭 드래그 이동 · 휠 확대'; }
+  if (i >= 0) { const w = WEAPONS[i]; reticleMat.color.set(w.id === 'mj' ? 0xff6fb0 : w.id === 'bolt' ? 0x9fc8ff : 0xff5a1f); t.textContent = w.icon + ' ' + w.name + ' — ' + (TOUCH && w.touchTip || w.tip); }
+  else { reticle.visible = arcLine.visible = false; t.textContent = '🖐 자유 시점 — ' + (TOUCH ? '한 손가락 이동 · 두 손가락 회전·확대' : '좌클릭 드래그 회전 · 우클릭 드래그 이동 · 휠 확대'); }
   t.classList.add('show'); clearTimeout(tipTimer); tipTimer = setTimeout(() => t.classList.remove('show'), 2600);
 }
 function setIf(el, prop, val, cache, key) { if (el && cache[key] !== val) { cache[key] = val; el.style[prop] = val; } }
@@ -5047,15 +5060,37 @@ window.addEventListener('pointermove', (e) => {
   mouse.x = e.clientX; mouse.y = e.clientY;
   if (scope.on) { const k = 0.0024 * camera.fov / 45; scope.yaw -= (e.movementX || 0) * k; scope.pitch = clamp(scope.pitch - (e.movementY || 0) * k, -1.45, 1.2); }
 });
+function pressFire() {
+  const id = curId(); if (!id) return;
+  leftDown = true; if (!scope.on) aimStep();
+  if (id === 'rail') fireRail();
+  else if (id === 'mj') mjClick();
+  else if (id !== 'cannon' && !(G.cd[id] > 0)) fireOnce();
+}
+// a finger waits a moment before it fires: if a second one lands, this was a pinch and nothing should go off
+const touches = new Set();
+let touchFire = 0;
+function cancelTouchFire() { clearTimeout(touchFire); touchFire = 0; }
+function touchDown(e) {
+  if (e.isPrimary) touches.clear();
+  touches.add(e.pointerId);
+  cancelTouchFire();
+  if (touches.size > 1) { leftDown = false; return; }
+  if (curId()) touchFire = setTimeout(() => { touchFire = 0; pressFire(); }, 90);
+}
+function touchUp(e, cancelled) {
+  touches.delete(e.pointerId);
+  if (cancelled) { cancelTouchFire(); leftDown = false; return; }
+  if (touchFire) { cancelTouchFire(); pressFire(); if (curId() === 'cannon') fireCannon(); }   // a tap quicker than the wait still counts
+}
+window.addEventListener('pointerup', (e) => { if (e.pointerType === 'touch') touchUp(e, false); });
+window.addEventListener('pointercancel', (e) => { if (e.pointerType === 'touch') touchUp(e, true); });
 canvas.addEventListener('pointerdown', (e) => {
   if (!G.playing) return; audioInit(); mouse.x = e.clientX; mouse.y = e.clientY;
+  if (e.pointerType === 'touch') { touchDown(e); return; }
   const id = curId(); if (!id) return;
-  if (e.button === 0) {
-    leftDown = true; if (!scope.on) aimStep();
-    if (id === 'rail') fireRail();
-    else if (id === 'mj') mjClick();
-    else if (id !== 'cannon' && !(G.cd[id] > 0)) fireOnce();
-  } else if (e.button === 2) rightPress = { x: e.clientX, y: e.clientY, t: performance.now() };
+  if (e.button === 0) pressFire();
+  else if (e.button === 2) rightPress = { x: e.clientX, y: e.clientY, t: performance.now() };
 });
 // a short right click (no drag) toggles the 파괴포 scope; a right drag is left to the camera as usual
 let rightPress = null;
@@ -5089,7 +5124,7 @@ window.addEventListener('pointerup', (e) => {
     if (click && G.playing && curId() === 'rail') { if (scope.on) exitScope(); else enterScope(); }
   }
 });
-window.addEventListener('blur', () => { leftDown = MJ.beamKey = false; exitScope(); zoomEnd(); for (const k in keys) keys[k] = false; });
+window.addEventListener('blur', () => { leftDown = MJ.beamKey = false; cancelTouchFire(); touches.clear(); exitScope(); zoomEnd(); for (const k in keys) keys[k] = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('wheel', (e) => { if (!scope.on) return; e.preventDefault(); scope.fov = clamp(scope.fov * Math.exp(e.deltaY * 0.0015), 2.5, 30); }, { passive: false });
 window.addEventListener('keydown', (e) => {
@@ -5119,6 +5154,7 @@ function applyControlMode() {
   const id = curId();
   document.body.classList.toggle('armed', !!id && G.playing);
   document.body.classList.toggle('mjmode', id === 'mj' && G.playing);
+  controls.touches.ONE = id && G.playing ? null : THREE.TOUCH.PAN;     // with a weapon out one finger aims; two still turn and zoom
   if (!G.playing) { controls.mouseButtons = MB_VIEW; return; }
   controls.mouseButtons = id ? MB_ARMED : MB_FREE;
 }
@@ -5140,16 +5176,19 @@ $('#muteBtn').addEventListener('click', toggleMute);
 // the help card and the weapon bar fold away (remembered per browser)
 function foldHelp(v) { const on = $('#help').classList.toggle('folded', v); try { localStorage.setItem('campusSmashHelpFold', on ? '1' : ''); } catch (e) {} }
 function foldWeapons(v) { const on = document.body.classList.toggle('wfold', v); $('#wFold').innerHTML = on ? '무기 펼치기 <i>▴</i>' : '무기 접기 <i>▾</i>'; try { localStorage.setItem('campusSmashWFold', on ? '1' : ''); } catch (e) {} }
+function foldHud(v) { const on = document.body.classList.toggle('hudfold', v); $('#hudFold').textContent = on ? '▸' : '◂'; $('#hudFold').setAttribute('aria-expanded', String(!on)); try { localStorage.setItem('campusSmashHudFold', on ? '1' : ''); } catch (e) {} }
 $('#helpBtn').addEventListener('click', () => foldHelp());
 $('#helpFold').addEventListener('click', () => foldHelp());
 $('#wFold').addEventListener('click', () => foldWeapons());
-try { foldHelp(!!localStorage.getItem('campusSmashHelpFold')); foldWeapons(!!localStorage.getItem('campusSmashWFold')); } catch (e) { foldWeapons(false); }
+$('#hudFold').addEventListener('click', () => foldHud());
+try { foldHelp(!!localStorage.getItem('campusSmashHelpFold')); foldWeapons(!!localStorage.getItem('campusSmashWFold')); foldHud(!!localStorage.getItem('campusSmashHudFold')); } catch (e) { foldWeapons(false); foldHud(false); }
 
 // ------------------------------------------------------------------ photo and link sharing
 const SITE_URL = 'https://elliott-json-park.github.io/campus-smash/';
 const shot = { open: false, url: '', file: null };
 // the Windows/Mac share sheets offer little; on a PC the link is simply copied
 const TOUCH = matchMedia('(pointer: coarse)').matches;
+if (TOUCH) $('#start .keys').textContent = '처음엔 무기 없이 자유 시점 · 한 손가락 이동 · 두 손가락 회전·확대 · 아래에서 무기를 고른 뒤 화면을 눌러 발사 · 같은 무기를 다시 누르면 해제';
 const canShareFile = (f) => TOUCH && !!navigator.canShare && navigator.canShare({ files: [f] });
 const shareText = () => G.kills ? '캠퍼스 건물 ' + G.kills + '채 무너뜨렸어! 너도 부숴봐' : '캠퍼스를 통째로 부수는 게임이야. 너도 해봐';
 function grabView() {
@@ -5236,6 +5275,20 @@ $('#shotShare').addEventListener('click', sharePhoto);
 $('#shotLink').addEventListener('click', shareLink);
 $('#shotClose').addEventListener('click', closeShot);
 $('#shot').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeShot(); });
+
+// phones drop the GPU context when memory runs short or the page sits in the background; three.js rebuilds from the CPU copies once it returns
+let glLostTimer = 0;
+canvas.addEventListener('webglcontextlost', () => {
+  leftDown = false; cancelTouchFire();
+  $('#loadTxt').textContent = '화면을 되살리는 중…'; document.querySelector('#loading .spin').hidden = false; $('#reloadBtn').hidden = true; $('#loading').classList.add('show');
+  clearTimeout(glLostTimer);
+  glLostTimer = setTimeout(() => { $('#loadTxt').textContent = '화면이 끊겼습니다'; document.querySelector('#loading .spin').hidden = true; $('#reloadBtn').hidden = false; }, 6000);
+});
+canvas.addEventListener('webglcontextrestored', () => {
+  clearTimeout(glLostTimer); $('#loading').classList.remove('show');
+  renderer.shadowMap.needsUpdate = true; SCORCH.needsUpdate = true; DG.needsUpdate = true;
+});
+$('#reloadBtn').addEventListener('click', () => location.reload());
 
 controls.autoRotate = true;
 
