@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#14161c">
 <title>캠퍼스 부수기</title>
-<meta name="description" content="1분 동안 캠퍼스를 부수고 우리 과 점수를 올리는 학과 대항전 브라우저 게임. 설치 없이 링크만 열면 바로 할 수 있습니다.">
+<meta name="description" content="1분 동안 캠퍼스 건물을 최대한 많이 무너뜨리고 랭킹에 이름을 올리는 브라우저 게임. 설치 없이 링크만 열면 바로 할 수 있습니다.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="캠퍼스 부수기">
-<meta property="og:title" content="캠퍼스 부수기: 학과 대항전">
-<meta property="og:description" content="1분 동안 캠퍼스를 무너뜨리고 우리 과를 1등으로. 설치 없이 바로 플레이.">
+<meta property="og:title" content="캠퍼스 부수기">
+<meta property="og:description" content="1분 동안 캠퍼스를 무너뜨리고 랭킹 1위에 도전. 설치 없이 바로 플레이.">
 <meta property="og:url" content="https://elliott-json-park.github.io/campus-smash/">
 <meta property="og:image" content="https://elliott-json-park.github.io/campus-smash/og.jpg">
 <meta property="og:image:width" content="1200">
@@ -171,6 +171,7 @@
   .chips div { background: rgba(255,255,255,.06); border-radius: 12px; padding: 8px 4px; text-align: center; }
   .chips small { display: block; font-size: 11px; color: var(--mute); font-weight: 700; }
   .chips b { font-size: 17px; font-weight: 900; }
+  .sect { font-size: 13px; font-weight: 800; color: var(--mute); margin: 18px 2px 4px; }
   .tabs { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: rgba(255,255,255,.06); margin: 16px 0 8px; }
   .tabs button { flex: 1; height: 36px; border: 0; border-radius: 9px; background: none; font-size: 13.5px; font-weight: 800; color: var(--mute); }
   .tabs button.on { background: rgba(255,255,255,.14); color: #fff; }
@@ -232,15 +233,14 @@
 
 <div id="start" class="screen">
   <div class="card panel">
-    <span class="kicker">기말고사 시즌 학과 대항전</span>
+    <span class="kicker">기말고사 시즌 한정 랭킹전</span>
     <div class="title">캠퍼스 <b>부수기</b></div>
-    <p class="lead">1분 동안 캠퍼스 건물을 최대한 많이 무너뜨리세요. 내 점수는 개인 랭킹에, 모든 판의 점수는 우리 과 점수에 쌓입니다.</p>
+    <p class="lead">1분 동안 캠퍼스 건물을 최대한 많이 무너뜨리세요. 한 판 최고 점수로 랭킹이 매겨집니다.</p>
     <div class="weap" id="weapIntro"></div>
     <label class="field"><span>닉네임</span><input id="nick" maxlength="10" autocomplete="nickname" enterkeyhint="next" placeholder="랭킹에 보일 이름 (10자 이내)"></label>
-    <label class="field"><span>학과</span><select id="dept"><option value="">학과를 골라 주세요</option></select></label>
     <div class="err" id="formErr"></div>
     <button class="btn main" id="btnStart">시작하기<small>제한 시간 1분</small></button>
-    <div class="teaser" id="teaser"><div class="hd"><span>지금 학과 순위</span><button class="link" id="openRank" style="padding:0">전체 랭킹</button></div><div id="teaserBody">불러오는 중</div></div>
+    <div class="teaser" id="teaser"><div class="hd"><span>지금 랭킹</span><button class="link" id="openRank" style="padding:0">전체 랭킹</button></div><div id="teaserBody">불러오는 중</div></div>
   </div>
 </div>
 
@@ -257,7 +257,7 @@
       <button class="btn main" id="btnAgain">다시 하기</button>
       <button class="btn" id="btnShare">자랑하기</button>
     </div>
-    <div class="tabs" role="tablist"><button class="on" data-tab="p">개인 랭킹</button><button data-tab="d">학과 랭킹</button></div>
+    <div class="sect">랭킹</div>
     <ul class="board" id="resList"></ul>
     <div class="note" id="resNote"></div>
   </div>
@@ -267,9 +267,8 @@
   <div class="card panel" id="rankCard">
     <button class="x" id="rankClose" aria-label="닫기">✕</button>
     <div class="title" style="font-size:26px">랭킹</div>
-    <div class="tabs" role="tablist"><button class="on" data-tab="d">학과 랭킹</button><button data-tab="p">개인 랭킹</button></div>
     <div id="rankList"><ul class="board" id="rankUl"></ul></div>
-    <div class="note">학과 점수는 그 과 학생들이 한 모든 판의 점수 합입니다. 개인 랭킹은 한 판 최고 점수로 매깁니다.</div>
+    <div class="note">한 판 최고 점수로 매깁니다. 1분을 다 채운 판만 올라갑니다.</div>
   </div>
 </div>
 
@@ -277,7 +276,6 @@
 
 <script src="js/three.min.js"></script>
 <script src="js/orbit.js"></script>
-<script src="js/depts.js"></script>
 <script src="js/rank.js"></script>
 <script>document.getElementById('loadBar').style.width = '25%';</script>
 <script src="data/campus.js"></script>

@@ -21,9 +21,9 @@ async function call(path, body, ms) {
 }
 window.RANK = {
   me,
-  setMe(name, dept) { me.name = name; me.dept = dept; save(me); },
+  setMe(name) { me.name = name; delete me.dept; save(me); },
   board: () => call('/board?cid=' + me.cid),
   start: () => call('/start', {}, 6000),
-  submit: (tok, r) => call('/submit', Object.assign({}, tok, { cid: me.cid, name: me.name, dept: me.dept, score: r.score, kills: r.kills, combo: r.combo }), 10000)
+  submit: (tok, r) => call('/submit', Object.assign({}, tok, { cid: me.cid, name: me.name, score: r.score, kills: r.kills, combo: r.combo }), 10000)
 };
 })();

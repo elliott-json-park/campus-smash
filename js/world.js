@@ -269,14 +269,27 @@ function facadeMaterial(style, wallHex, glassHex, accentHex) {
         vec2 fUv = vec2(vUv.x, (vUv.y < 1.0 ? vUv.y : 1.0 + mod(vUv.y - 1.0, 7.0)) / 8.0);
         vec4 fRm = texture2D(roughnessMap, fUv);
         vec3 fLum = mapTexelToLinear(texture2D(map, fUv)).rgb;
-        vec3 fBase = mix(mix(uWall, uAccent, fRm.r), uGlass * 1.6, fRm.b);
+        bool fPar = vUv.y < -5.0 && vUv.y > -50.0;
+        if (fPar) {
+          float dTop = (-10.0 - vUv.y) * 3.6;                          // metres below the top of the wall
+          float cop = step(dTop, 0.26), shd = step(0.26, dTop) * step(dTop, 0.36);
+          fRm = vec4(0.0, 0.92 - cop * 0.3, 0.0, 1.0);
+          fLum = vec3(0.9 + 0.22 * cop) * (1.0 - 0.35 * shd);
+        }
+        // every window pane its own: blinds half down, a lamp left on, a darker room, a little more sky in the glass
+        vec2 wId = floor(vec2(vUv.x * 8.0, vUv.y));
+        float wh = fract(sin(dot(wId, vec2(12.9898, 78.233))) * 43758.5453), wh2 = fract(wh * 7.13);
+        vec3 gl = uGlass * 1.6 * (0.72 + 0.5 * wh2);
+        gl = mix(gl, vec3(0.86, 0.82, 0.72), step(0.84, wh) * step(0.55, fract(vUv.y * 1.0 + 0.6)));
+        gl = mix(gl, vec3(1.0, 0.84, 0.56) * 0.75, step(0.955, wh));
+        vec3 fBase = mix(mix(uWall, uAccent, fRm.r), gl, fRm.b);
         diffuseColor.rgb *= fLum * fBase;`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * max(fRm.g, 0.06);')
       .replace('#include <normal_fragment_maps>', `
-        vec3 mapN = texture2D(normalMap, fUv).xyz * 2.0 - 1.0; mapN.xy *= normalScale;
+        vec3 mapN = fPar ? vec3(0.0, 0.0, 1.0) : texture2D(normalMap, fUv).xyz * 2.0 - 1.0; mapN.xy *= normalScale;
         normal = perturbNormal2Arb(-vViewPosition, normal, mapN, faceDirection);`);
   };
-  m.customProgramCacheKey = () => 'facade-v3';
+  m.customProgramCacheKey = () => 'facade-v5';
   m.userData.U = U;
   return m;
 }
@@ -702,6 +715,63 @@ function osmNameFor(c) {
   return best && best.n;
 }
 const plinthMat = new THREE.MeshStandardMaterial({ color: lin('#9d968a'), roughness: 0.95, map: roofTex });
+const PAR = 1.05;
+// cut a convex polygon of [x, y, z, u, v] at height yc: the part below and the part above
+function splitY(poly, yc) {
+  const lo = [], hi = [];
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length], ia = a[1] < yc, ib = b[1] < yc;
+    (ia ? lo : hi).push(a);
+    if (ia !== ib) { const t = (yc - a[1]) / (b[1] - a[1]), m = a.map((x, k) => x + (b[k] - x) * t); m[1] = yc; lo.push(m); hi.push(m); }
+  }
+  return [lo, hi];
+}
+// rooftop plant: air-handling units, a stair and lift tower on the bigger roofs. They are part of the building's own roof
+// geometry, so they break and fall with it.
+function addRoofPlant(flat, rp, rn, ru, wp, wn, wu, dom) {
+  if (!flat.length) return;
+  // the main roof is the flat level with the most area (parapet tops and small penthouses sit higher)
+  const bins = new Map(); for (const t of flat) { const k = Math.round((t[1] + t[4] + t[7]) / 3 * 2); bins.set(k, (bins.get(k) || 0) + t[9]); }
+  let bk = 0, ba = -1; for (const [k, a] of bins) if (a > ba) { ba = a; bk = k; }
+  const top = bk / 2;
+  const roof = flat.filter((t) => Math.abs((t[1] + t[4] + t[7]) / 3 - top) < 0.6);
+  let area = 0; for (const t of roof) area += t[9];
+  if (area < 120) return;
+  const inTri = (x, z, t) => {
+    const d = (x1, z1, x2, z2, x3, z3) => (x1 - x3) * (z2 - z3) - (x2 - x3) * (z1 - z3);
+    const d1 = d(x, z, t[0], t[2], t[3], t[5]), d2 = d(x, z, t[3], t[5], t[6], t[8]), d3 = d(x, z, t[6], t[8], t[0], t[2]);
+    return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+  };
+  const onRoof = (x, z) => roof.some((t) => inTri(x, z, t));
+  const cs = Math.cos(dom), sn = Math.sin(dom);
+  const fits = (x, z, hw, hd, m) => { for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0]]) { const u = a * (hw + m), v = b * (hd + m); if (!onRoof(x + u * cs - v * sn, z + u * sn + v * cs)) return false; } return true; };
+  const pick = () => { let r = rnd() * area; for (const t of roof) { r -= t[9]; if (r <= 0) { let a = rnd(), b = rnd(); if (a + b > 1) { a = 1 - a; b = 1 - b; } return [t[0] + (t[3] - t[0]) * a + (t[6] - t[0]) * b, t[2] + (t[5] - t[2]) * a + (t[8] - t[2]) * b]; } } return null; };
+  const boxes = [];
+  const want = Math.min(7, Math.max(1, Math.round(area / 260)));
+  if (area > 600) for (let k = 0; k < 30; k++) { const p = pick(); if (p && fits(p[0], p[1], 2.6, 3.2, 2)) { boxes.push([p[0], p[1], 2.6, 3.2, 3.4]); break; } }   // stair and lift tower
+  for (let k = 0; k < 60 && boxes.length < want + 1; k++) {
+    const p = pick(); if (!p) break;
+    const hw = 0.8 + rnd() * 1.4, hd = 0.6 + rnd() * 1.0, h = 0.9 + rnd() * 1.2;
+    if (!fits(p[0], p[1], hw, hd, 1.6)) continue;
+    if (boxes.some((b) => Math.hypot(b[0] - p[0], b[1] - p[1]) < b[2] + hw + 1.2)) continue;
+    boxes.push([p[0], p[1], hw, hd, h]);
+  }
+  for (const [x, z, hw, hd, h] of boxes) {
+    const y0 = top, y1 = top + h, c = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([u, v]) => [x + u * cs - v * sn, z + u * sn + v * cs]);
+    const facing = (p1, p2, p3, n) => ((p2[1] - p1[1]) * (p3[2] - p1[2]) - (p2[2] - p1[2]) * (p3[1] - p1[1])) * n[0] + ((p2[2] - p1[2]) * (p3[0] - p1[0]) - (p2[0] - p1[0]) * (p3[2] - p1[2])) * n[1] + ((p2[0] - p1[0]) * (p3[1] - p1[1]) - (p2[1] - p1[1]) * (p3[0] - p1[0])) * n[2] > 0;
+    const tri = (p1, p2, p3, n) => { if (!facing(p1, p2, p3, n)) { const t = p2; p2 = p3; p3 = t; } for (const p of [p1, p2, p3]) { rp.push(p[0], p[1], p[2]); rn.push(n[0], n[1], n[2]); ru.push(p[0] / 4 + p[1] * 0.25, p[2] / 4); } };
+    const T = c.map((q) => [q[0], y1, q[1]]), Bt = c.map((q) => [q[0], y0, q[1]]);
+    tri(T[0], T[2], T[1], [0, 1, 0]); tri(T[0], T[3], T[2], [0, 1, 0]);
+    // the sides use the wall material as plain parapet wall (uv.y in the parapet range), so each unit gets a pale capped rim
+    const side = (p1, p2, p3, n, u0) => { if (!facing(p1, p2, p3, n)) { let t = p2; p2 = p3; p3 = t; t = u0[1]; u0 = [u0[0], u0[2], t]; } for (const [p, u] of [[p1, u0[0]], [p2, u0[1]], [p3, u0[2]]]) { wp.push(p[0], p[1], p[2]); wn.push(n[0], n[1], n[2]); wu.push(u, -10 - (y1 - p[1]) / FLOOR); } };
+    for (let i = 0; i < 4; i++) {
+      const j = (i + 1) % 4, ex = c[j][0] - c[i][0], ez = c[j][1] - c[i][1], L = Math.hypot(ex, ez) || 1, mx = (c[i][0] + c[j][0]) / 2 - x, mz = (c[i][1] + c[j][1]) / 2 - z;
+      let n = [-ez / L, 0, ex / L]; if (n[0] * mx + n[2] * mz < 0) n = [-n[0], 0, -n[2]];
+      const ua = 0, ub = L / TU;
+      side(Bt[i], T[j], T[i], n, [ua, ub, ua]); side(Bt[i], Bt[j], T[j], n, [ua, ub, ub]);
+    }
+  }
+}
 async function buildBuildings() {
   for (let k = 0; k < M.meshes.length; k++) {
     const m = M.meshes[k];
@@ -723,15 +793,40 @@ async function buildBuildings() {
       }
       let hb = 0; for (let i = 1; i < 90; i++) if (hist[i] > hist[hb]) hb = i;
       const dom = (hb + 0.5) / 90 * Math.PI / 2, D5 = Math.PI / 36;
+      // the top of the wall above each spot (0.5 m columns): a triangle mid-way up a tall facade must not grow a parapet
+      const colTop = new Map(), ck = (x, z) => Math.round(x * 2) * 100000 + Math.round(z * 2);
+      for (let t = b0.s; t < b0.s + b0.n; t += 3) {
+        A.fromArray(P, I[t] * 3); B.fromArray(P, I[t + 1] * 3); C.fromArray(P, I[t + 2] * 3);
+        N.crossVectors(e1.subVectors(B, A), e2.subVectors(C, A)); if (N.lengthSq() < 1e-12) continue; N.normalize();
+        if (Math.abs(N.y) > 0.55) continue;
+        for (const v of [A, B, C]) { const key = ck(v.x, v.z); colTop.set(key, Math.max(colTop.get(key) || -1e9, v.y)); }
+      }
+      const flat = [];                                                     // flat roof triangles, for the rooftop plant below
       for (let t = b0.s; t < b0.s + b0.n; t += 3) {
         A.fromArray(P, I[t] * 3); B.fromArray(P, I[t + 1] * 3); C.fromArray(P, I[t + 2] * 3);
         N.crossVectors(e1.subVectors(B, A), e2.subVectors(C, A)); const len = N.length(); if (len < 1e-6) continue; N.divideScalar(len);
-        if (Math.abs(N.y) > 0.55) { for (const v of [A, B, C]) { rp.push(v.x, v.y, v.z); rn.push(N.x, N.y, N.z); ru.push(v.x / 4, v.z / 4); } continue; }
+        if (Math.abs(N.y) > 0.55) {
+          for (const v of [A, B, C]) { rp.push(v.x, v.y, v.z); rn.push(N.x, N.y, N.z); ru.push(v.x / 4, v.z / 4); }
+          if (N.y > 0.97) flat.push([A.x, A.y, A.z, B.x, B.y, B.z, C.x, C.y, C.z, len / 2]);
+          continue;
+        }
         let a = Math.atan2(N.z, N.x); const k = Math.round((a - dom) / (Math.PI / 2)), snap = dom + k * Math.PI / 2;
         a = Math.abs(a - snap) < 0.17 ? snap : Math.round(a / D5) * D5;
         const tx = -Math.sin(a), tz = Math.cos(a);
-        for (const v of [A, B, C]) { wp.push(v.x, v.y, v.z); wn.push(N.x, N.y, N.z); wu.push(((v.x - bcx) * tx + (v.z - bcz) * tz + uo) / TU, Math.max(0, v.y - b0.ymin) / FLOOR); }
+        const vs = [A, B, C].map((v) => [v.x, v.y, v.z, ((v.x - bcx) * tx + (v.z - bcz) * tz + uo) / TU, Math.max(0, v.y - b0.ymin) / FLOOR]);
+        let top = -1e9; for (const v of vs) top = Math.max(top, colTop.get(ck(v[0], v[2])) || v[1]);
+        const put = (poly, par) => {
+          for (let q = 1; q < poly.length - 1; q++) for (const v of [poly[0], poly[q], poly[q + 1]]) {
+            wp.push(v[0], v[1], v[2]); wn.push(N.x, N.y, N.z); wu.push(v[3], par ? -10 - (top - v[1]) / FLOOR : v[4]);
+          }
+        };
+        const yc = top - PAR;
+        let ymn = 1e9, ymx = -1e9; for (const v of vs) { ymn = Math.min(ymn, v[1]); ymx = Math.max(ymx, v[1]); }
+        if (ymx <= yc + 0.01) put(vs, false);
+        else if (ymn >= yc - 0.01 || top - ymn < PAR + 0.6) put(vs, true);   // short walls (terrace balustrades) are parapet all the way down
+        else { const [lo, hi] = splitY(vs, yc); if (lo.length > 2) put(lo, false); if (hi.length > 2) put(hi, true); }
       }
+      addRoofPlant(flat, rp, rn, ru, wp, wn, wu, dom);
       const nW = wp.length / 3, nR = rp.length / 3;
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(wp.concat(rp), 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(wn.concat(rn), 3));

@@ -2385,7 +2385,7 @@ $('#quitBtn').addEventListener('click', () => {
   if (!quitArm) { quitArm = setTimeout(() => { quitArm = 0; $('#quitBtn').textContent = '그만'; }, 2200); $('#quitBtn').textContent = '정말 그만?'; return; }
   clearTimeout(quitArm); quitArm = 0; G.quit = true; endRound();
 });
-const res = { tab: 'p', data: null, img: null, blob: null };
+const res = { data: null, img: null, blob: null };
 function finish() {
   const final = { score: Math.round(G.score), kills: G.kills, combo: G.maxCombo };
   selectWeapon(-1, true);
@@ -2398,7 +2398,7 @@ function finish() {
   $('#resScore').textContent = fmtNum(final.score);
   $('#resKills').textContent = final.kills + '/' + TOTAL;
   $('#resCombo').textContent = final.combo > 1 ? '×' + final.combo : '없음';
-  $('#resName').textContent = (RANK.me.name || '') + ' (' + (RANK.me.dept || '') + ') 이번 판 점수';
+  $('#resName').textContent = (RANK.me.name || '') + ' 이번 판 점수';
   $('#resBest').hidden = true; $('#resRank').textContent = '집계 중';
   $('#resNote').textContent = '';
   $('#resList').innerHTML = '<li class="empty">랭킹을 불러오는 중</li>';
@@ -2410,9 +2410,8 @@ function finish() {
     res.data = d;
     if (d.me) $('#resRank').textContent = d.me.rank + '위';
     $('#resBest').hidden = !(final.score > (d.prevBest || 0));
-    const di = d.depts.findIndex((x) => x.dept === RANK.me.dept);
-    $('#resNote').textContent = di >= 0 ? RANK.me.dept + ' 순위 ' + (di + 1) + '위, 이번 판으로 +' + fmtNum(final.score) + '점' : '';
-    renderBoard($('#resList'), d, res.tab);
+    $('#resNote').textContent = d.me ? '참가자 ' + fmtNum(d.total) + '명 중 ' + d.me.rank + '위' + (d.me.best > final.score ? ', 내 최고 ' + fmtNum(d.me.best) + '점' : '') : '';
+    renderBoard($('#resList'), d);
   }).catch((e) => {
     $('#resRank').textContent = '미집계';
     $('#resNote').textContent = e.code === 'name' ? '닉네임에 쓸 수 없는 말이 있어 랭킹에 올리지 못했습니다. 닉네임을 바꿔 주세요.' : e.code === 'rate' ? '짧은 시간에 너무 많이 제출되어 잠시 기록되지 않습니다.' : '랭킹 서버에 연결하지 못해 이번 판은 기록되지 않았습니다.';
@@ -2420,54 +2419,36 @@ function finish() {
   });
 }
 function loadBoard(intoResult) {
-  return RANK.board().then((d) => { res.data = d; if (intoResult) renderBoard($('#resList'), d, res.tab); renderTeaser(d); if (!$rank.classList.contains('hide')) renderBoard($('#rankUl'), d, rankTab); return d; })
+  return RANK.board().then((d) => { res.data = d; if (intoResult) renderBoard($('#resList'), d); renderTeaser(d); if (!$rank.classList.contains('hide')) renderBoard($('#rankUl'), d); return d; })
     .catch(() => { const t = '<li class="empty">랭킹을 불러오지 못했습니다</li>'; if (intoResult) $('#resList').innerHTML = t; $('#rankUl').innerHTML = t; $('#teaserBody').textContent = '랭킹 서버에 연결하지 못했습니다'; });
 }
-function renderBoard(ul, d, tab) {
+function renderBoard(ul, d) {
   if (!d) return;
   let html = '';
-  if (tab === 'p') {
-    d.players.forEach((p, i) => { html += '<li class="' + (p.me ? 'me' : '') + '"><span class="rk">' + (i + 1) + '</span><span class="who"><b>' + esc(p.name) + '</b><small>' + esc(p.dept) + '</small></span><span class="sc num">' + fmtNum(p.best) + '</span></li>'; });
-    if (d.me && !d.players.some((p) => p.me)) html += '<li class="me"><span class="rk">' + d.me.rank + '</span><span class="who"><b>' + esc(d.me.name) + '</b><small>' + esc(d.me.dept) + '</small></span><span class="sc num">' + fmtNum(d.me.best) + '</span></li>';
-    if (!d.players.length) html = '<li class="empty">아직 기록이 없습니다. 첫 번째 주인공이 되어 보세요</li>';
-  } else {
-    d.depts.forEach((x, i) => { html += '<li class="' + (x.dept === RANK.me.dept ? 'me' : '') + '"><span class="rk">' + (i + 1) + '</span><span class="who"><b>' + esc(x.dept) + '</b><small>' + fmtNum(x.players) + '명 참여, ' + fmtNum(x.plays) + '판</small></span><span class="sc num">' + fmtNum(x.total) + '</span></li>'; });
-    if (!d.depts.length) html = '<li class="empty">아직 기록이 없습니다. 우리 과가 1등을 먼저 차지하세요</li>';
-  }
+  d.players.forEach((p, i) => { html += '<li class="' + (p.me ? 'me' : '') + '"><span class="rk">' + (i + 1) + '</span><span class="who"><b>' + esc(p.name) + '</b></span><span class="sc num">' + fmtNum(p.best) + '</span></li>'; });
+  if (d.me && !d.players.some((p) => p.me)) html += '<li class="me"><span class="rk">' + d.me.rank + '</span><span class="who"><b>' + esc(d.me.name) + '</b></span><span class="sc num">' + fmtNum(d.me.best) + '</span></li>';
+  if (!d.players.length) html = '<li class="empty">아직 기록이 없습니다. 첫 번째 1위가 되어 보세요</li>';
   ul.innerHTML = html;
 }
 function renderTeaser(d) {
-  const top = d.depts.slice(0, 3);
-  $('#teaserBody').innerHTML = top.length ? top.map((x, i) => (i + 1) + '위 <b>' + esc(x.dept) + '</b> ' + fmtNum(x.total) + '점').join('<br>') : '아직 1등 학과가 없습니다. 지금 시작하면 우리 과가 1위';
+  const top = d.players.slice(0, 3);
+  $('#teaserBody').innerHTML = top.length ? top.map((x, i) => (i + 1) + '위 <b>' + esc(x.name) + '</b> ' + fmtNum(x.best) + '점').join('<br>') : '아직 1위가 없습니다. 지금 시작하면 바로 1위';
 }
-for (const tb of $result.querySelectorAll('.tabs button')) tb.addEventListener('click', () => { res.tab = tb.dataset.tab; for (const o of $result.querySelectorAll('.tabs button')) o.classList.toggle('on', o === tb); renderBoard($('#resList'), res.data, res.tab); });
-let rankTab = 'd';
-for (const tb of $rank.querySelectorAll('.tabs button')) tb.addEventListener('click', () => { rankTab = tb.dataset.tab; for (const o of $rank.querySelectorAll('.tabs button')) o.classList.toggle('on', o === tb); renderBoard($('#rankUl'), res.data, rankTab); });
-$('#openRank').addEventListener('click', () => { show($rank, true); $('#rankUl').innerHTML = '<li class="empty">불러오는 중</li>'; if (res.data) renderBoard($('#rankUl'), res.data, rankTab); loadBoard(false); });
+$('#openRank').addEventListener('click', () => { show($rank, true); $('#rankUl').innerHTML = '<li class="empty">불러오는 중</li>'; if (res.data) renderBoard($('#rankUl'), res.data); loadBoard(false); });
 $('#rankClose').addEventListener('click', () => show($rank, false));
 $rank.addEventListener('click', (e) => { if (e.target === $rank) show($rank, false); });
 
-// entry form: nickname + department, remembered in this browser
-(function form() {
-  const sel = $('#dept');
-  for (const [college, list] of window.DEPT_GROUPS || []) {
-    const og = document.createElement('optgroup'); og.label = college;
-    for (const d of list) { const o = document.createElement('option'); o.value = o.textContent = d; og.appendChild(o); }
-    sel.appendChild(og);
-  }
-  if (RANK.me.name) $('#nick').value = RANK.me.name;
-  if (RANK.me.dept) sel.value = RANK.me.dept;
-})();
+// entry form: a nickname, remembered in this browser
+if (RANK.me.name) $('#nick').value = RANK.me.name;
 function tryStart() {
-  const name = $('#nick').value.normalize('NFC').replace(/[^\p{L}\p{N} _.\-]/gu, '').replace(/\s+/g, ' ').trim(), dept = $('#dept').value, err = $('#formErr');
+  const name = $('#nick').value.normalize('NFC').replace(/[^\p{L}\p{N} _.\-]/gu, '').replace(/\s+/g, ' ').trim(), err = $('#formErr');
   if (!name) { err.textContent = '닉네임을 적어 주세요 (한글, 영문, 숫자 10자 이내)'; $('#nick').focus(); return; }
-  if (!dept) { err.textContent = '학과를 골라 주세요. 목록에 없으면 «그 밖에»에서 고르면 됩니다'; return; }
-  err.textContent = ''; $('#nick').value = name; RANK.setMe(name, dept);
+  err.textContent = ''; $('#nick').value = name; RANK.setMe(name);
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   start();
 }
 $('#btnStart').addEventListener('click', tryStart);
-$('#nick').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#dept').focus(); } });
+$('#nick').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); tryStart(); } });
 $('#btnAgain').addEventListener('click', () => start());
 loadBoard(false);
 let autoStart = false;
@@ -2506,14 +2487,14 @@ function brandShot(c, r) {
   x.fillStyle = g; x.fillRect(0, H - 36 * u, W, 36 * u);
   x.textBaseline = 'alphabetic'; x.shadowColor = 'rgba(0,0,0,.55)'; x.shadowBlur = u;
   x.font = font(900, 7.5 * u); x.fillStyle = '#fff'; x.fillText(fmtNum(r.score) + '점', m, H - 15 * u);
-  x.font = font(700, 3.8 * u); x.fillStyle = '#ffd36b'; x.fillText((RANK.me.dept || '') + ' ' + (RANK.me.name || '') + ', 건물 ' + r.kills + '채 붕괴', m, H - 9 * u);
+  x.font = font(700, 3.8 * u); x.fillStyle = '#ffd36b'; x.fillText((RANK.me.name || '') + ', 건물 ' + r.kills + '채 붕괴', m, H - 9 * u);
   x.font = font(800, 3.4 * u); x.textAlign = 'right'; x.fillStyle = '#fff'; x.fillText('캠퍼스 부수기', W - m, H - 9 * u);
   x.font = font(600, 2.7 * u); x.fillStyle = 'rgba(255,255,255,.75)'; x.fillText(SITE_URL.replace(/^https:\/\/|\/$/g, ''), W - m, H - 4.6 * u);
   x.textAlign = 'left';
 }
 const shareText = () => {
-  const d = res.data, di = d ? d.depts.findIndex((x) => x.dept === RANK.me.dept) : -1;
-  return '캠퍼스 부수기 1분 만에 ' + fmtNum(G.score) + '점! ' + (RANK.me.dept ? RANK.me.dept + (di >= 0 ? ' 지금 ' + (di + 1) + '위,' : '') + ' 우리 과 점수 올려 줘 ' : '너도 해봐 ');
+  const d = res.data, rk = d && d.me ? ' 지금 ' + d.me.rank + '위,' : '';
+  return '캠퍼스 부수기 1분 만에 ' + fmtNum(G.score) + '점!' + rk + ' 나 이겨 봐 ';
 };
 async function copyText(s) {
   try { await navigator.clipboard.writeText(s); return true; } catch (e) {}
@@ -2571,7 +2552,7 @@ playControls(false);
   try { renderer.compile(scene, camera); } catch (e) { console.warn(e); }
   for (const o of tmp) scene.remove(o);
 })();
-if (autoStart && RANK.me.name && RANK.me.dept) setTimeout(start, 60);
+if (autoStart && RANK.me.name) setTimeout(start, 60);
 
 // ------------------------------------------------------------------ per-frame hook (called by the scene loop before render)
 function pre(dt) {
