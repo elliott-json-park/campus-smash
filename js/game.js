@@ -24,11 +24,15 @@ const _v = new V3(), _v2 = new V3(), _v3 = new V3(), _q = new THREE.Quaternion()
 const lin = (h) => new THREE.Color(h).convertSRGBToLinear();
 const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 const GRAV = 16;
-// the 1 m terrain covers the campus and the slopes around it; past its edge there is only haze far below
+// sparks and chunks ask for the ground thousands of times a frame, so cache the campus test per 1 m cell.
+// Off campus there is only the cliff, and far below it the cloud.
+const inCampus = new Int8Array(DW * DH).fill(-1);
 function groundY(x, z) {
   const i = Math.round(x - X0), j = Math.round(z - Z0);
   if (i < 0 || j < 0 || i >= DW || j >= DH) return CLIFF_Y;
-  return getH(x, z);
+  const k = j * DW + i; let f = inCampus[k];
+  if (f < 0) f = inCampus[k] = inPoly(X0 + i, Z0 + j, CAMPUS) ? 1 : 0;
+  return f ? getH(x, z) : CLIFF_Y;
 }
 const camGround = (x, z) => Math.max(BASEY + 10, groundY(x, z));   // the camera's target glides over the drop instead of diving into it
 function randDir(out) { const u = Math.random() * 2 - 1, a = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u); return out.set(s * Math.cos(a), u, s * Math.sin(a)); }
@@ -2196,9 +2200,19 @@ const TOUCH = matchMedia('(pointer: coarse)').matches;
 if (TOUCH) document.body.classList.add('touch');
 // the round opens from the north-east, the side that looks over the campus toward Namsan; tall phone screens back off further
 const START_T = new V3(CXc + 10, camGround(CXc, CZc), CZc - 6);
+// tall screens look from the south-east instead: from the north-east they would stare into the open notch in the fence line
+const START_TP = new V3(CXc - 25, camGround(CXc - 25, CZc - 10), CZc - 10);
+const startTarget = () => innerWidth / innerHeight < 1 ? START_TP : START_T;
+// tall phone screens: a wider lens and a steeper look down, so the campus fills the screen instead of the sky
+function fitFov() {
+  const a = innerWidth / innerHeight, f = a < 1 ? clamp(45 + (1 - a) * 22, 45, 58) : 45;
+  if (Math.abs(camera.fov - f) > 0.01) { camera.fov = f; camera.updateProjectionMatrix(); updPScale(); }
+}
+fitFov(); window.addEventListener('resize', () => setTimeout(fitFov, 0));
 function startView() {
-  const a = innerWidth / innerHeight, k = a < 1 ? clamp(1.05 / a, 1, 1.9) : 1;
-  return START_T.clone().add(new V3(250 * k, 205 * k, -205 * k));
+  const a = innerWidth / innerHeight;
+  if (a < 1) { const k = clamp(0.62 / a, 1, 1.5); return START_TP.clone().add(new V3(120 * k, 400 * k, 150 * k)); }
+  return START_T.clone().add(new V3(250, 205, -205));
 }
 function menuView() { return START_T.clone().add(new V3(330, 120, -260)); }
 function tweenCam(p, t, dur) { camTween = { p0: camera.position.clone(), t0: controls.target.clone(), p1: p.clone(), t1: t.clone(), s: G.time, d: dur }; }
@@ -2216,11 +2230,11 @@ function cameraStep(dt) {
     const dist = camera.position.distanceTo(controls.target), speed = clamp(dist * 0.6, 25, 300) * (keys.ShiftLeft || keys.ShiftRight ? 2.4 : 1);
     if (fIn || sIn) {
       const mx = (ux * fIn - uz * sIn) * speed * dt, mz = (uz * fIn + ux * sIn) * speed * dt;
-      const tx = clamp(controls.target.x + mx, BX0 - 60, BX1 + 60), tz = clamp(controls.target.z + mz, BZ0 - 60, BZ1 + 60);
+      const tx = clamp(controls.target.x + mx, BX0 - 30, BX1 + 30), tz = clamp(controls.target.z + mz, BZ0 - 30, BZ1 + 30);
       camera.position.x += tx - controls.target.x; camera.position.z += tz - controls.target.z; controls.target.x = tx; controls.target.z = tz;
     }
-    // panning may not wander off over the city: the target stays near the campus
-    const tx = clamp(controls.target.x, BX0 - 60, BX1 + 60), tz = clamp(controls.target.z, BZ0 - 60, BZ1 + 60);
+    // panning may not wander off over the drop: the target stays over the campus
+    const tx = clamp(controls.target.x, BX0 - 30, BX1 + 30), tz = clamp(controls.target.z, BZ0 - 30, BZ1 + 30);
     if (tx !== controls.target.x || tz !== controls.target.z) { camera.position.x += tx - controls.target.x; camera.position.z += tz - controls.target.z; controls.target.x = tx; controls.target.z = tz; }
     const ty = camGround(controls.target.x, controls.target.z), dy = (ty - controls.target.y) * Math.min(1, dt * 3);
     controls.target.y += dy; camera.position.y += dy;
@@ -2314,7 +2328,7 @@ window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
   if (/^Digit[1-5]$/.test(e.code)) selectWeapon(Number(e.code[5]) - 1);
   else if (e.code === 'Escape') selectWeapon(-1);
-  else if (e.code === 'KeyR') tweenCam(startView(), START_T, 1.0);
+  else if (e.code === 'KeyR') tweenCam(startView(), startTarget(), 1.0);
   else if (e.code === 'KeyM') toggleMute();
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -2349,7 +2363,7 @@ function start() {
   scoreDirty = true; shownSec = -1; shownMult = 0; $('#feed').innerHTML = '';
   document.body.classList.remove('menu', 'result'); document.body.classList.add('playing');
   show($start, false); show($result, false); show($rank, false);
-  playControls(true); tweenCam(startView(), START_T, 1.3);
+  playControls(true); tweenCam(startView(), startTarget(), 1.3);
   selectWeapon(TOUCH ? 1 : 0, true);
   quitArm = 0; $('#quitBtn').textContent = '그만';
   window.RANK && RANK.start().then((t) => { if (G.round === round) G.tok = t; }).catch(() => {});
@@ -2397,7 +2411,7 @@ function finish() {
     if (d.me) $('#resRank').textContent = d.me.rank + '위';
     $('#resBest').hidden = !(final.score > (d.prevBest || 0));
     const di = d.depts.findIndex((x) => x.dept === RANK.me.dept);
-    $('#resNote').textContent = di >= 0 ? RANK.me.dept + ' 학과 순위 ' + (di + 1) + '위, 이번 판으로 +' + fmtNum(final.score) + '점' : '';
+    $('#resNote').textContent = di >= 0 ? RANK.me.dept + ' 순위 ' + (di + 1) + '위, 이번 판으로 +' + fmtNum(final.score) + '점' : '';
     renderBoard($('#resList'), d, res.tab);
   }).catch((e) => {
     $('#resRank').textContent = '미집계';

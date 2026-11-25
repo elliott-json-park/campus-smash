@@ -403,10 +403,10 @@ async function buildTerrain() {
   g.save(); g.shadowColor = 'rgba(25,22,15,0.45)'; g.shadowBlur = 12; g.fillStyle = '#5a564f';
   for (const f of M.footprints) { poly(g, f.p); g.fill(); }
   g.restore();
-  // off campus the ground stays (the slopes of Namsan and the streets of Pil-dong), a little greyer so the campus reads first
-  g.save(); g.beginPath(); g.rect(0, 0, cw, ch); poly(g, CAMPUS); g.fillStyle = 'rgba(128,136,146,0.32)'; g.fill('evenodd'); g.restore();
-  g.strokeStyle = '#8f877a'; g.lineWidth = 2.2 * PX; poly(g, CAMPUS); g.stroke();
-  OUT.cover = src; OUT.cw = cov.width; OUT.ch = cov.height;
+  // a kerb of pale stone along the fence, then everything outside it is cut away (the cliff starts there)
+  g.strokeStyle = '#b9b1a2'; g.lineWidth = 1.6 * PX; poly(g, CAMPUS); g.stroke();
+  g.strokeStyle = '#8f877a'; g.lineWidth = 0.5 * PX; poly(g, CAMPUS); g.stroke();
+  g.globalCompositeOperation = 'destination-in'; poly(g, CAMPUS); g.fillStyle = '#000'; g.fill(); g.globalCompositeOperation = 'source-over';
   const tex = texOf(cv, true, false), stex = texOf(sp, false, false);
   const STEP = 1, nx = Math.floor((X1 - X0) / STEP) + 1, nz = Math.floor((Z1 - Z0) / STEP) + 1;
   const pos = new Float32Array(nx * nz * 3), uv = new Float32Array(nx * nz * 2);
@@ -430,132 +430,216 @@ async function buildTerrain() {
       float det = 1.0;
       det = mix(det, 0.55 + dg * 0.9, spl.r); det = mix(det, 0.72 + da * 0.56, spl.g); det = mix(det, 0.62 + dp * 0.76, spl.b);
       diffuseColor.rgb *= det;
-      vec4 scH = texture2D(tScorch, (vWxz - uScO.xy + 0.5) / uScO.zw); diffuseColor.rgb *= scH.rgb;`).replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += vec3(1.0, 0.33, 0.06) * pow(1.0 - scH.a, 1.6) * 4.0;').replace('#include <fog_fragment>', '#include <fog_fragment>\n' + EDGE_FADE);
+      vec4 scH = texture2D(tScorch, (vWxz - uScO.xy + 0.5) / uScO.zw); diffuseColor.rgb *= scH.rgb;`).replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += vec3(1.0, 0.33, 0.06) * pow(1.0 - scH.a, 1.6) * 4.0;');
   };
   const ground = new THREE.Mesh(geo, gm); ground.name = 'ground'; ground.receiveShadow = true; scene.add(ground);
   buildBackdrop();
 }
 
-// ------------------------------------------------------------------ backdrop: the campus sits on the east slope of Namsan, not on an island.
-// Around the 1 m terrain: a haze floor, the city as soft blocks, Namsan to the south-west with N Seoul Tower on its summit
-// (real positions: the tower stands about 1.3 km from the campus centre, here at x -1040, z +780).
-const OUT = {};
-const EDGE_FADE = '{ float eD = min(min(vWxz.x - (' + X0.toFixed(1) + '), (' + X1.toFixed(1) + ') - vWxz.x), min(vWxz.y - (' + Z0.toFixed(1) + '), (' + Z1.toFixed(1) + ') - vWxz.y));' +
-  ' gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, (1.0 - smoothstep(0.0, 30.0, eD)) * 0.35); }';
-// the same haze toward the terrain edge, for instanced meshes standing on it
-function edgeFaded(mat, windows) {
-  mat.onBeforeCompile = (sh) => {
-    sh.vertexShader = 'varying vec2 vWxz; varying vec3 vWp; varying vec3 vWn;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n vec4 eW = vec4(transformed, 1.0);\n#ifdef USE_INSTANCING\n eW = instanceMatrix * eW;\n#endif\n eW = modelMatrix * eW; vWxz = eW.xz; vWp = eW.xyz; vWn = objectNormal;');
-    let fs = 'varying vec2 vWxz; varying vec3 vWp; varying vec3 vWn;\n' + sh.fragmentShader.replace('#include <fog_fragment>', '#include <fog_fragment>\n' + EDGE_FADE);
-    // windows on the city blocks: rows of darker glass laid out in world space, so they keep their size on every block
-    if (windows) fs = fs.replace('#include <color_fragment>', '#include <color_fragment>\n if (abs(vWn.y) < 0.5) { float wu = abs(vWn.x) > 0.5 ? vWp.z : vWp.x; float fu = fract(wu / 3.2), fv = fract(vWp.y / 3.3); float win = step(0.2, fu) * step(fu, 0.8) * step(0.32, fv) * step(fv, 0.82); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.17, 0.21, 0.25), win * 0.5); } else diffuseColor.rgb *= 0.8;');
-    sh.fragmentShader = fs;
-  };
-  return mat;
-}
-const NAMSAN = { x: -1000, z: 805, peak: 262 };
-function outerY(x, z) { const qx = clamp(x, X0, X1), qz = clamp(z, Z0, Z1), d = Math.hypot(x - qx, z - qz); return Math.max(lerp(getH0(qx, qz), CITY_Y, smoothstep(0, 450, d)), namsanH(x, z)); }
-const TOWER = { x: -1040, z: 780 };
-// Namsan is a long ridge: highest under the tower, running down north-east toward the campus and west toward Huam-dong
-const CITY_Y = BASEY + 4;
+// ------------------------------------------------------------------ the campus alone, on a rock: past the fence the land drops away as a cliff
+// into a sea of cloud. Namsan and N Seoul Tower rise out of the cloud far to the south-west (real bearing and distance: about 1.3 km).
+const CLOUD_Y = BASEY - 95;
 const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
-function namsanH(x, z) { return CITY_Y + (NAMSAN.peak - CITY_Y) * namsanF(x, z); }
+const hash1 = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+// GLSL value noise, shared by the cliff and the cloud shaders
+const GLSL_NOISE = `
+float h3(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float vn(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(h3(i), h3(i + vec3(1,0,0)), f.x), mix(h3(i + vec3(0,1,0)), h3(i + vec3(1,1,0)), f.x), f.y),
+             mix(mix(h3(i + vec3(0,0,1)), h3(i + vec3(1,0,1)), f.x), mix(h3(i + vec3(0,1,1)), h3(i + vec3(1,1,1)), f.x), f.y), f.z); }
+float fbm(vec3 p) { return vn(p) * 0.5 + vn(p * 2.03) * 0.25 + vn(p * 4.01) * 0.125 + vn(p * 8.05) * 0.0625; }
+`;
+function campusRing(step) {
+  const ring = CAMPUS.slice(); if (ring.length > 2 && ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1]) ring.pop();
+  if (ringArea(ring) < 0) ring.reverse();
+  const pts = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 0.01) continue;
+    const n = Math.max(1, Math.ceil(L / step));
+    for (let k = 0; k < n; k++) pts.push([lerp(a[0], b[0], k / n), lerp(a[1], b[1], k / n)]);
+  }
+  // outward normals, averaged over a few metres so corners turn instead of folding
+  const N = pts.length, nrm = [];
+  for (let i = 0; i < N; i++) {
+    let nx = 0, nz = 0;
+    for (let k = -4; k <= 4; k++) { const p = pts[(i + k - 1 + N * 2) % N], q = pts[(i + k + 1 + N) % N], w = 1 - Math.abs(k) / 5; nx += (q[1] - p[1]) * w; nz += -(q[0] - p[0]) * w; }
+    const L = Math.hypot(nx, nz) || 1; nrm.push([nx / L, nz / L]);
+  }
+  let s = 0; const arc = [0]; for (let i = 1; i < N; i++) { s += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); arc.push(s); }
+  return { pts, nrm, arc, N };
+}
+function buildCliffs() {
+  const { pts, nrm, arc, N } = campusRing(0.9);
+  // rows from the lip down: dense near the top where the eye is, sparse where the cloud swallows it
+  const DEP = [0, 0.3, 0.9, 1.8, 3, 4.4, 6, 7.8, 9.8, 12, 14.5, 17.2, 20.2, 23.5, 27, 31, 35.5, 40.5, 46, 52, 59, 67, 76, 86, 98, 112, 128, 150];
+  const R = DEP.length, pos = new Float32Array(N * R * 3), col = new Float32Array(N * R * 3), ao = new Float32Array(N * R);
+  const BAND = 6.4, c = new THREE.Color();
+  const GRASS = lin('#6f8c42'), SOIL = lin('#6b5238'), SOIL2 = lin('#56412c');
+  // Namsan is granite: pale grey-beige, warmer where iron stains it
+  const ROCK = ['#bdb6a9', '#aaa397', '#c9c1b2', '#9f988c', '#b8ab96', '#d1cabd', '#a99d88'].map(lin);
+  for (let i = 0; i < N; i++) {
+    const p = pts[i], [nx, nz] = nrm[i], s = arc[i], top = getH(p[0], p[1]);
+    // columns: the face juts and recesses along the ring, in blocks of a few metres with a softer wobble on top
+    const blk = Math.floor(s / 5.5), colJut = (hash1(blk) - 0.5) * 1.6 + Math.sin(s * 0.37) * 0.35 + Math.sin(s * 1.13 + 2.1) * 0.18;
+    for (let r = 0; r < R; r++) {
+      const d = DEP[r], y = top - d, k = (r * N + i) * 3;
+      let w;
+      if (d < 0.01) w = 0;
+      else if (d < 0.5) w = 0.35;                                         // the turf lip hangs a little over the edge
+      else if (d < 2.2) w = 0.1 - (d - 0.5) * 0.25;                       // under it, soil cut back into the slope
+      else {
+        const band = Math.floor((y + 400) / BAND), t = (y + 400) / BAND - band;  // horizontal strata in world height
+        const ledge = Math.pow(t, 3) * 2.6 - 0.7 + (hash1(band * 7.31 + blk * 0.13) - 0.5) * 0.7;   // each stratum sticks out at its top
+        w = colJut * smoothstep(2, 10, d) + ledge * smoothstep(1.5, 6, d) - Math.max(0, d - 34) * 0.2 - Math.pow(Math.max(0, d - 90) / 60, 2) * 14;
+        ao[r * N + i] = clamp(0.55 + t * 0.55, 0.55, 1);                  // the underside of every ledge sits in its own shadow
+      }
+      if (d < 2.2) ao[r * N + i] = 1;
+      pos[k] = p[0] + nx * w; pos[k + 1] = y; pos[k + 2] = p[1] + nz * w;
+      if (d < 0.5) c.copy(GRASS);
+      else if (d < 2.2) c.copy(SOIL).lerp(SOIL2, (d - 0.5) / 1.7);
+      else { const band = Math.floor((y + 400) / BAND); c.copy(ROCK[Math.floor(hash1(band * 3.7) * ROCK.length)]).lerp(ROCK[Math.floor(hash1(band * 9.1 + 4) * ROCK.length)], 0.35); c.multiplyScalar((hash1(band * 1.7) < 0.5 ? 0.9 : 1.06) * lerp(1, 0.8, smoothstep(10, 120, d))); }
+      col[k] = c.r; col[k + 1] = c.g; col[k + 2] = c.b;
+    }
+  }
+  const idx = new Uint32Array(N * (R - 1) * 6); let o = 0;
+  for (let r = 0; r < R - 1; r++) for (let i = 0; i < N; i++) {
+    const a = r * N + i, b = r * N + (i + 1) % N, e = a + N, f = b + N;
+    idx[o++] = a; idx[o++] = b; idx[o++] = e; idx[o++] = b; idx[o++] = f; idx[o++] = e;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.setAttribute('aAo', new THREE.BufferAttribute(ao, 1)); geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0, envMapIntensity: 0.35 });
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uFade = { value: new THREE.Vector2(CLOUD_Y + 45, CLOUD_Y - 5) };
+    sh.vertexShader = 'attribute float aAo; varying float vAo; varying vec3 vWp; varying vec3 vWn;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n vAo = aAo; vWp = (modelMatrix * vec4(transformed, 1.0)).xyz; vWn = objectNormal;');
+    sh.fragmentShader = 'uniform vec2 uFade; varying float vAo; varying vec3 vWp; varying vec3 vWn;\n' + GLSL_NOISE + sh.fragmentShader
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float rn = fbm(vWp * vec3(0.09, 0.3, 0.09));                   // broad mottling, stretched sideways like bedding
+        float rg = vn(vWp * 0.8);
+        float rc = fbm(vWp * vec3(0.32, 0.12, 0.32));
+        diffuseColor.rgb *= 0.84 + rn * 0.3 + rg * 0.06;
+        diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.01, 0.045, abs(rc - 0.5)));   // long dark joints
+        diffuseColor.rgb *= mix(vec3(1.0), vec3(1.06, 0.98, 0.9), smoothstep(0.55, 0.8, vn(vWp * vec3(0.05, 0.4, 0.05))));   // iron stains
+        float up = clamp(vWn.y, 0.0, 1.0);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.30, 0.38, 0.17) * (0.8 + rn * 0.4), smoothstep(0.35, 0.75, up) * smoothstep(0.35, 0.7, vn(vWp * 0.6)) * 0.85);   // moss on the ledges
+        diffuseColor.rgb *= vAo;`)
+      .replace('#include <fog_fragment>', '#include <fog_fragment>\n gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, smoothstep(uFade.x, uFade.y, vWp.y));');
+  };
+  const m = new THREE.Mesh(geo, mat); m.name = 'cliff'; m.frustumCulled = false; m.receiveShadow = true; m.castShadow = false; scene.add(m);
+  buildRailing(pts, nrm);
+}
+// a low guard rail just inside the edge, so the drop reads as a drop; it stops where buildings and gates meet the fence
+function buildRailing(pts, nrm) {
+  const post = [], rail = [];
+  const fpNear = (x, z) => M.footprints.some((f) => inPoly(x, z, f.p) || distToPoly(x, z, f.p) < 1.2);
+  const gateNear = (x, z) => M.gates.some((g) => Math.hypot(g.p[0] - x, g.p[1] - z) < 9);
+  const N = pts.length, STEP = 3;
+  let prev = null;
+  for (let i = 0; i < N; i += STEP) {
+    const p = pts[i], [nx, nz] = nrm[i], x = p[0] - nx * 0.7, z = p[1] - nz * 0.7;
+    if (fpNear(x, z) || gateNear(x, z)) { prev = null; continue; }
+    const y = getH(x, z);
+    post.push([x, y + 0.55, z, 0.09, 1.1, 0.09, 0]);
+    if (prev) {
+      const dx = x - prev[0], dz = z - prev[2], L = Math.hypot(dx, dz);
+      if (L < 4.5) for (const h of [1.05, 0.55]) rail.push([(x + prev[0]) / 2, (y + prev[1]) / 2 + h, (z + prev[2]) / 2, L, 0.05, 0.05, Math.atan2(dz, dx), Math.atan2(y - prev[1], L)]);
+    }
+    prev = [x, y, z];
+  }
+  const box = new THREE.BoxGeometry(1, 1, 1), mat = new THREE.MeshStandardMaterial({ color: lin('#3d4248'), roughness: 0.5, metalness: 0.6 });
+  const mk = (list) => {
+    if (!list.length) return;
+    const im = new THREE.InstancedMesh(box, mat, list.length), o = new THREE.Object3D();
+    list.forEach((b, i) => { o.position.set(b[0], b[1], b[2]); o.rotation.set(0, -b[6], b[7] || 0, 'YZX'); o.scale.set(b[3], b[4], b[5]); o.updateMatrix(); im.setMatrixAt(i, o.matrix); });
+    im.castShadow = true; im.receiveShadow = true; scene.add(im);
+  };
+  mk(post); mk(rail);
+}
+// the cloud sea: one big disc, shaded with drifting noise, thick near the rock and thinning toward the horizon
+const CLOUD_U = { uT: { value: 0 } };
+function buildClouds() {
+  const cx = (X0 + X1) / 2, cz = (Z0 + Z1) / 2;
+  const geo = new THREE.CircleGeometry(4200, 96).rotateX(-Math.PI / 2);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: Object.assign({ uC: { value: new THREE.Vector2(cx, cz) }, uHaze: { value: HAZE.clone() } }, CLOUD_U), transparent: true, depthWrite: false, fog: false,
+    vertexShader: 'varying vec3 vWp; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vWp = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+    fragmentShader: 'uniform float uT; uniform vec2 uC; uniform vec3 uHaze; varying vec3 vWp;\n' + GLSL_NOISE + `
+      void main(){
+        vec2 q = vWp.xz * 0.006 + vec2(uT * 0.004, uT * 0.0025);
+        float n = fbm(vec3(q, uT * 0.01)), n2 = fbm(vec3(q * 3.1 + 7.0, uT * 0.02));
+        float puff = smoothstep(0.32, 0.72, n * 0.8 + n2 * 0.35);
+        float d = length(vWp.xz - uC);
+        vec3 top = vec3(1.0, 0.99, 0.97), low = vec3(0.72, 0.78, 0.86);
+        vec3 c = mix(low, top, puff * 0.85 + n2 * 0.25);
+        float far = smoothstep(900.0, 3600.0, d);
+        c = mix(c, uHaze, far * 0.85);
+        gl_FragColor = vec4(c, mix(0.86 + puff * 0.14, 1.0, far));
+      }`
+  });
+  const m = new THREE.Mesh(geo, mat); m.position.set(cx, CLOUD_Y, cz); m.renderOrder = -1; m.name = 'clouds'; scene.add(m);
+  // a second, thinner layer a little higher, drifting the other way, wisps that brush the foot of the cliff
+  const m2 = new THREE.Mesh(new THREE.CircleGeometry(1600, 64).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+    uniforms: Object.assign({ uC: { value: new THREE.Vector2(cx, cz) } }, CLOUD_U), transparent: true, depthWrite: false, fog: false,
+    vertexShader: 'varying vec3 vWp; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vWp = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+    fragmentShader: 'uniform float uT; uniform vec2 uC; varying vec3 vWp;\n' + GLSL_NOISE + `
+      void main(){
+        vec2 q = vWp.xz * 0.011 - vec2(uT * 0.006, -uT * 0.003);
+        float n = fbm(vec3(q, 3.0 + uT * 0.015));
+        float a = smoothstep(0.5, 0.78, n) * 0.55 * (1.0 - smoothstep(700.0, 1600.0, length(vWp.xz - uC)));
+        gl_FragColor = vec4(vec3(0.98, 0.98, 1.0), a);
+      }`
+  }));
+  m2.position.set(cx, CLOUD_Y + 26, cz); m2.renderOrder = -1; scene.add(m2);
+}
+// Namsan: a forested ridge rising out of the cloud, highest under the tower, running down toward the campus
+const NAMSAN = { x: -1000, z: 805, peak: 262 };
+const TOWER = { x: -1040, z: 780 };
 function namsanF(x, z) {
   const dx = x - NAMSAN.x, dz = z - NAMSAN.z;
-  const u = dx * 0.8 - dz * 0.6, v = dx * 0.6 + dz * 0.8;              // u: along the ridge (+ toward the campus), v: across it
-  const su = u > 0 ? 980 : 760, sv = 430 + Math.max(0, u) * 0.15;
+  const u = dx * 0.8 - dz * 0.6, v = dx * 0.6 + dz * 0.8;
+  const su = u > 0 ? 820 : 700, sv = 400 + Math.max(0, u) * 0.12;
   const n = Math.sin(x * 0.011 + z * 0.007) * 0.08 + Math.sin(x * 0.029 - z * 0.023) * 0.06 + Math.sin(u * 0.02) * 0.05 + Math.sin(v * 0.035 + 1.3) * 0.04;
   const r2 = (u * u) / (su * su) + (v * v) / (sv * sv);
-  return Math.exp(-r2 * 1.25) * (1 + n * 0.45) * (1 - 0.18 * Math.exp(-r2 * 30));
+  return Math.exp(-r2 * 1.25) * (1 + n * 0.45) * (1 - 0.15 * Math.exp(-r2 * 30));
 }
-function buildBackdrop() {
-  const cx = (X0 + X1) / 2, cz = (Z0 + Z1) / 2;
-  // haze floor, the colour the edge of the terrain fades into
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(5200, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: HAZE.clone().convertSRGBToLinear(), fog: false, toneMapped: false }));
-  floor.position.set(cx, BASEY - 6, cz); floor.renderOrder = -1; scene.add(floor);
-  // the land beyond the 1 m terrain: starts at the terrain edge height, settles to the city floor over a few hundred metres,
-  // and rises into the forested Namsan ridge to the south-west. Inside the 1 m terrain it sits just below it, out of sight.
-  {
-    const STEP = 40, H = 2600, n = Math.round(H * 2 / STEP) + 1, pos = new Float32Array(n * n * 3), col = new Float32Array(n * n * 3), c = new THREE.Color();
-    const FOR = lin('#2f4228'), FOR2 = lin('#4a5a32'), CITY = lin('#a9a69d'), CITY2 = lin('#97948c');
-    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-      const x = cx - H + i * STEP, z = cz - H + j * STEP, k = j * n + i;
-      const qx = clamp(x, X0, X1), qz = clamp(z, Z0, Z1), d = Math.hypot(x - qx, z - qz), inside = d === 0;
-      const edge = getH0(qx, qz), city = lerp(edge, CITY_Y, smoothstep(0, 450, d));
-      const f = namsanF(x, z), mtn = CITY_Y + (NAMSAN.peak - CITY_Y) * f;
-      const y = inside ? getH0(x, z) - 5 : Math.max(city, mtn);
-      pos[k * 3] = x; pos[k * 3 + 1] = y; pos[k * 3 + 2] = z;
-      const nz = Math.sin(x * 0.013 + z * 0.021) * 0.5 + 0.5, wood = clamp((f - 0.05) * 6, 0, 1);
-      c.copy(CITY).lerp(CITY2, nz).lerp(FOR, wood).lerp(FOR2, wood * nz * 0.6); col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
-    }
-    const idx = new Uint32Array((n - 1) * (n - 1) * 6); let o = 0;
-    for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) { const p = j * n + i; idx[o++] = p; idx[o++] = p + n; idx[o++] = p + 1; idx[o++] = p + 1; idx[o++] = p + n; idx[o++] = p + n + 1; }
-    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.setIndex(new THREE.BufferAttribute(idx, 1)); geo.computeVertexNormals();
-    const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true })); m.name = 'outer'; m.receiveShadow = true; scene.add(m);
+const namsanH = (x, z) => CLOUD_Y + (NAMSAN.peak - CLOUD_Y) * (namsanF(x, z) - 0.3) / 0.7;
+function buildNamsan() {
+  const R = 1250, NR = 40, NA = 80, pos = [], col = [], idx = [], c = new THREE.Color(), A = lin('#2c4a26'), B = lin('#4d6632');
+  for (let i = 0; i <= NR; i++) for (let a = 0; a < NA; a++) {
+    const r = R * Math.pow(i / NR, 1.3), t = a / NA * Math.PI * 2, x = NAMSAN.x + Math.cos(t) * r, z = NAMSAN.z + Math.sin(t) * r;
+    const gul = Math.abs(Math.sin(t * 9 + r * 0.004)) * 14 + Math.abs(Math.sin(t * 23 - r * 0.009)) * 6;
+    pos.push(x, namsanH(x, z) - gul * Math.min(1, r / 300), z);
+    const n = Math.sin(x * 0.03 + z * 0.02) * 0.5 + 0.5; c.copy(A).lerp(B, n); col.push(c.r, c.g, c.b);
   }
-  // N Seoul Tower: base building, tapering shaft, the observation drum with its window band, and the striped antenna mast
-  {
-    const g = new THREE.Group(), y0 = namsanH(TOWER.x, TOWER.z) - 2;
-    const conc = new THREE.MeshLambertMaterial({ color: lin('#e8e6e1') }), dark = new THREE.MeshLambertMaterial({ color: lin('#3a4552') }), red = new THREE.MeshLambertMaterial({ color: lin('#d23a2a') });
-    const add = (geo, mat, y) => { const m = new THREE.Mesh(geo, mat); m.position.y = y; g.add(m); return m; };
-    add(new THREE.CylinderGeometry(15, 17, 10, 16), conc, 5);
-    add(new THREE.CylinderGeometry(2.6, 4.6, 118, 16), conc, 10 + 59);
-    add(new THREE.CylinderGeometry(9.5, 7.5, 6, 24), conc, 128);
-    add(new THREE.CylinderGeometry(10, 10, 7, 24), dark, 134.5);
-    add(new THREE.CylinderGeometry(9, 10, 5, 24), conc, 140.5);
-    add(new THREE.CylinderGeometry(6, 9, 4, 24), conc, 145);
-    for (let k = 0; k < 6; k++) add(new THREE.CylinderGeometry(1.6 - k * 0.2, 1.8 - k * 0.2, 14, 10), k % 2 ? conc : red, 154 + k * 14);
-    add(new THREE.CylinderGeometry(0.35, 0.6, 18, 6), conc, 245);
-    g.position.set(TOWER.x, y0, TOWER.z); g.name = 'tower'; scene.add(g);
-    OUT.tower = g;
-  }
-  // the city: soft blocks on the haze floor all round (none on the mountain), and real-size blocks on the off-campus part of the terrain
-  {
-    const box = new THREE.BoxGeometry(1, 1, 1); box.translate(0, 0.5, 0);
-    const mat = edgeFaded(new THREE.MeshLambertMaterial({ color: 0xffffff }), true);
-    const far = [], near = [];
-    let s = 7;
-    const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    for (let n = 0; n < 1400 && far.length < 520; n++) {
-      const a = r() * Math.PI * 2, d = 420 + Math.pow(r(), 0.7) * 1700, x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
-      if (x > X0 - 30 && x < X1 + 30 && z > Z0 - 30 && z < Z1 + 30) continue;
-      if (namsanF(x, z) > 0.06) continue;
-      const tall = r() < 0.15;
-      far.push([x, outerY(x, z) - 2, z, 14 + r() * 22, (tall ? 50 : 12) + r() * (tall ? 70 : 30), 14 + r() * 22, r() * Math.PI]);
-    }
-    const cov = OUT.cover, cw = OUT.cw, ch = OUT.ch;
-    const isVeg = (x, z) => { if (!cov) return false; const i = clamp(Math.floor((x - X0) / (X1 - X0) * cw), 0, cw - 1), j = clamp(Math.floor((z - Z0) / (Z1 - Z0) * ch), 0, ch - 1); const v = cov[(j * cw + i) * 4]; return v === 1 || v === 2; };
-    for (let z = Z0 + 10; z < Z1 - 10; z += 17) for (let x = X0 + 10; x < X1 - 10; x += 17) {
-      const jx = x + (r() - 0.5) * 6, jz = z + (r() - 0.5) * 6;
-      if (inPoly(jx, jz, CAMPUS) || distToPoly(jx, jz, CAMPUS) < 9 || isVeg(jx, jz)) continue;
-      if (r() < 0.25) continue;
-      const w = 7 + r() * 6, d = 7 + r() * 6, gy = Math.min(getH0(jx - w / 2, jz - d / 2), getH0(jx + w / 2, jz + d / 2), getH0(jx - w / 2, jz + d / 2), getH0(jx + w / 2, jz - d / 2));
-      near.push([jx, gy - 1, jz, w, 5 + r() * r() * 14 + (Math.max(getH0(jx, jz) - gy, 0)), d, (r() - 0.5) * 0.3]);
-    }
-    const all = far.concat(near), im = new THREE.InstancedMesh(box, mat, all.length), o = new THREE.Object3D(), c = new THREE.Color();
-    const PAL = ['#b9b4ab', '#a8a49d', '#c4bdb0', '#9ea3a8', '#b3a28f', '#8f969c', '#c9c3b8', '#a5866c'].map(lin);
-    all.forEach((b, i) => { o.position.set(b[0], b[1], b[2]); o.rotation.set(0, b[6], 0); o.scale.set(b[3], b[4], b[5]); o.updateMatrix(); im.setMatrixAt(i, o.matrix); im.setColorAt(i, c.copy(PAL[Math.floor(r() * PAL.length)])); });
-    im.receiveShadow = true; im.name = 'city'; scene.add(im);
-  }
-  // forest on the wooded slopes outside the fence (Namsan side), small and cheap
-  if (OUT.cover) {
-    const cov = OUT.cover, cw = OUT.cw, ch = OUT.ch, list = [];
-    let s = 11; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    for (let z = Z0 + 4; z < Z1 - 4; z += 7) for (let x = X0 + 4; x < X1 - 4; x += 7) {
-      const jx = x + (r() - 0.5) * 5, jz = z + (r() - 0.5) * 5;
-      const i = clamp(Math.floor((jx - X0) / (X1 - X0) * cw), 0, cw - 1), j = clamp(Math.floor((jz - Z0) / (Z1 - Z0) * ch), 0, ch - 1);
-      if (cov[(j * cw + i) * 4] !== 2 || inPoly(jx, jz, CAMPUS) || distToPoly(jx, jz, CAMPUS) < 4) continue;
-      list.push([jx, getH0(jx, jz), jz, 2.6 + r() * 2.2]);
-    }
-    if (list.length) {
-      const geo = new THREE.IcosahedronGeometry(1, 0), mat = edgeFaded(new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }));
-      const im = new THREE.InstancedMesh(geo, mat, list.length), o = new THREE.Object3D(), c = new THREE.Color();
-      const PAL = ['#4d6b34', '#5b7a3c', '#6c7f3e', '#8a6f35', '#9b5a2c', '#3e5a30'].map(lin);
-      list.forEach((t, k) => { o.position.set(t[0], t[1] + t[3] * 1.1, t[2]); o.rotation.set(r(), r() * 6, 0); o.scale.set(t[3], t[3] * 1.15, t[3]); o.updateMatrix(); im.setMatrixAt(k, o.matrix); im.setColorAt(k, c.copy(PAL[Math.floor(r() * PAL.length)])); });
-      im.name = 'forest'; scene.add(im);
-    }
-  }
+  for (let i = 0; i < NR; i++) for (let a = 0; a < NA; a++) { const p = i * NA + a, q = i * NA + (a + 1) % NA; idx.push(p, q, p + NA, q, q + NA, p + NA); }   // counter-clockwise seen from above
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); geo.setIndex(idx); geo.computeVertexNormals();
+  // the forest: canopy blobs from noise, darker down in the folds, a few rock scars near the top
+  const mm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, envMapIntensity: 0.4 });
+  mm.onBeforeCompile = (sh) => {
+    sh.vertexShader = 'varying vec3 vWp; varying vec3 vWn;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n vWp = (modelMatrix * vec4(transformed, 1.0)).xyz; vWn = objectNormal;');
+    sh.fragmentShader = 'varying vec3 vWp; varying vec3 vWn;\n' + GLSL_NOISE + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+      float cb = fbm(vWp * 0.06), cs = vn(vWp * 0.22);
+      diffuseColor.rgb *= 0.78 + cb * 0.3 + cs * 0.1;
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.42, 0.33, 0.18), smoothstep(0.55, 0.9, vn(vWp * vec3(0.012, 0.0, 0.012) + 3.0)) * 0.16);   // autumn patches
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.55, 0.53, 0.5), smoothstep(0.22, 0.08, vWn.y) * 0.3);   // bare rock on the steep bits`);
+  };
+  scene.add(new THREE.Mesh(geo, mm));
+  // N Seoul Tower: base building, tapering shaft, observation drum with its window band, striped antenna mast
+  const g = new THREE.Group(), y0 = namsanH(TOWER.x, TOWER.z) - 2;
+  const conc = new THREE.MeshLambertMaterial({ color: lin('#e8e6e1') }), dark = new THREE.MeshLambertMaterial({ color: lin('#3a4552') }), red = new THREE.MeshLambertMaterial({ color: lin('#d23a2a') });
+  const add = (geo, m, y) => { const o = new THREE.Mesh(geo, m); o.position.y = y; g.add(o); };
+  add(new THREE.CylinderGeometry(15, 17, 10, 16), conc, 5);
+  add(new THREE.CylinderGeometry(2.6, 4.6, 118, 16), conc, 69);
+  add(new THREE.CylinderGeometry(9.5, 7.5, 6, 24), conc, 128);
+  add(new THREE.CylinderGeometry(10, 10, 7, 24), dark, 134.5);
+  add(new THREE.CylinderGeometry(9, 10, 5, 24), conc, 140.5);
+  add(new THREE.CylinderGeometry(6, 9, 4, 24), conc, 145);
+  for (let k = 0; k < 6; k++) add(new THREE.CylinderGeometry(1.6 - k * 0.2, 1.8 - k * 0.2, 14, 10), k % 2 ? conc : red, 154 + k * 14);
+  add(new THREE.CylinderGeometry(0.35, 0.6, 18, 6), conc, 245);
+  g.position.set(TOWER.x, y0, TOWER.z); g.name = 'tower'; scene.add(g);
 }
+function buildBackdrop() { buildCliffs(); buildClouds(); buildNamsan(); }
 
 // ------------------------------------------------------------------ crisp surface overlays (court, field) drawn at 1-2 cm per pixel
 function surfaceOverlay(poly, y, W, draw) {
@@ -1164,7 +1248,7 @@ function frame(now) {
   if (fly) { const t = clamp((now - fly.s) / fly.d, 0, 1), e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; camera.position.lerpVectors(fly.p0, fly.p1, e); controls.target.lerpVectors(fly.t0, fly.t1, e); if (t >= 1) fly = null; }
   if (walk.on) stepWalk(dt);
   else if (!(window.__game && window.__game.G.playing)) { controls.update(); const gy = getH(camera.position.x, camera.position.z) + 2; if (camera.position.y < gy) camera.position.y = gy; }
-  sky.position.copy(camera.position);
+  sky.position.copy(camera.position); CLOUD_U.uT.value = now / 1000;
   const G = window.__game; if (G) G.pre(dt, now);
   renderer.render(scene, camera); updateLabels();
 }
