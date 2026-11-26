@@ -29,11 +29,13 @@ const GRAV = 16;
 const inCampus = new Int8Array(DW * DH).fill(-1);
 function groundY(x, z) {
   const i = Math.round(x - X0), j = Math.round(z - Z0);
-  if (i < 0 || j < 0 || i >= DW || j >= DH) return CLIFF_Y;
+  if (i < 0 || j < 0 || i >= DW || j >= DH) return offGround(x, z);
   const k = j * DW + i; let f = inCampus[k];
   if (f < 0) f = inCampus[k] = inPoly(X0 + i, Z0 + j, CAMPUS) ? 1 : 0;
-  return f ? getH(x, z) : CLIFF_Y;
+  return f ? getH(x, z) : offGround(x, z);
 }
+function inCampusAt(x, z) { const i = Math.round(x - X0), j = Math.round(z - Z0); if (i < 0 || j < 0 || i >= DW || j >= DH) return false; const k = j * DW + i; if (inCampus[k] < 0) inCampus[k] = inPoly(X0 + i, Z0 + j, CAMPUS) ? 1 : 0; return inCampus[k] === 1; }
+function offGround(x, z) { const h = V.namsanSurf(x, z); return h > V.CLOUD_Y + 1 ? h : CLIFF_Y; }
 const camGround = (x, z) => Math.max(BASEY + 10, groundY(x, z));   // the camera's target glides over the drop instead of diving into it
 function randDir(out) { const u = Math.random() * 2 - 1, a = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u); return out.set(s * Math.cos(a), u, s * Math.sin(a)); }
 const fmtNum = (n) => Math.round(n).toLocaleString('ko-KR');
@@ -870,7 +872,7 @@ function prepGroups() {
     const live = parts.filter((p) => !p.fixed).length; if (!live) continue;
     const wTotal = parts.reduce((s, p) => s + (p.fixed ? 0 : p.w), 0);
     structs.push({ type: 'g', group: obj, parts, total: live, alive: live, wTotal, wAlive: wTotal, bb, ymin, ymax, cx: (bb[0] + bb[2]) / 2, cz: (bb[1] + bb[3]) / 2,
-      name: info ? info.name : null, label: info ? info.label : null, counts: !!info, value: info ? 300 : 6, vol: 0, dead: false });
+      name: info ? info.name : null, label: info ? info.label : null, counts: !!info, value: info ? (info.big ? 1500 : 300) : 6, vol: 0, dead: false });
   }
 }
 prepGroups();
@@ -1479,6 +1481,7 @@ function coolDown() {
 // ------------------------------------------------------------------ explosions and structural damage
 function applyDamage(p, R, power, o) {
   o = o || {};
+  if (!inCampusAt(p.x, p.z) && V.namsanHit(p.x, p.z, R)) { addScore(Math.round(R * 6), 0, true); if (Math.random() < 0.4) addFire(p.x, p.y, p.z, rand(4, 8), R * 0.6, null, true); }
   const Rg = o.laser ? R : R * 2.4;
   for (const S of structs) {
     if (S.dead) continue;
@@ -2100,7 +2103,7 @@ function kill(S) {
   if (S.cx != null) popup('+' + fmtNum(bonus), new V3(S.cx, (S.ymax || 0) + 6, S.cz), 'big');
   if (G.combo > 1) { sfxChime(); banner('연쇄 ×' + G.combo, '점수 ' + mult().toFixed(2).replace(/0$/, '') + '배'); }
   if (S.label) { const L = S.label; L.el.classList.add('dead'); setTimeout(() => { const i = labels.indexOf(L); if (i >= 0) labels.splice(i, 1); L.el.remove(); }, 4000); }
-  if (G.kills === TOTAL && G.live) { const b = Math.round(G.left * 1500); addScore(b / mult(), 0, true); sysFeed('캠퍼스 전멸! 남은 시간 보너스 +' + fmtNum(b)); endRound(); }
+  if (G.kills === TOTAL && G.live && G.mode === 'time') { const b = Math.round(G.left * 1500); addScore(b / mult(), 0, true); sysFeed('캠퍼스 전멸! 남은 시간 보너스 +' + fmtNum(b)); endRound(); }
 }
 function feed(html, cls) {
   const box = $('#feed'), el = document.createElement('div'); if (cls) el.className = cls; el.innerHTML = html; box.prepend(el);
@@ -2176,12 +2179,12 @@ function stepHUD(dt) {
     }
   });
   if (!G.playing) return;
-  if (G.live && !G.ended) {
+  if (G.live && !G.ended && G.mode === 'time') {
     G.left = Math.max(0, G.left - dt);
     if (G.left <= 0) endRound();
   }
   const sec = Math.ceil(G.left);
-  if (sec !== shownSec) {
+  if (sec !== shownSec && G.mode === 'time') {
     shownSec = sec; hud.timer.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
     hud.timer.classList.toggle('low', G.live && sec <= 10 && sec > 0);
     if (G.live && sec <= 5 && sec > 0) sfxBeep(880, 0.06);
@@ -2331,6 +2334,7 @@ window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
   if (/^Digit[1-5]$/.test(e.code)) selectWeapon(Number(e.code[5]) - 1);
   else if (e.code === 'Escape') selectWeapon(-1);
+  else if (e.code === 'KeyP') capture();
   else if (e.code === 'KeyR') tweenCam(startView(), startTarget(), 1.0);
   else if (e.code === 'KeyM') toggleMute();
 });
@@ -2358,9 +2362,11 @@ const $start = $('#start'), $result = $('#result'), $rank = $('#rank');
 function show(el, on) { el.classList.toggle('hide', !on); }
 // a second round needs an untouched campus: craters, scorch and broken buildings can't be put back cheaply, so the page reloads
 // and goes straight into the round (the files come from the browser cache)
-function start() {
-  if (G.round) { try { sessionStorage.setItem('campusSmashAuto', '1'); } catch (e) {} location.reload(); return; }
+function start(mode) {
+  mode = mode === 'free' ? 'free' : 'time';
+  if (G.round) { try { sessionStorage.setItem('campusSmashAuto', mode); } catch (e) {} location.reload(); return; }
   audioInit();
+  G.mode = mode; document.body.classList.toggle('free', mode === 'free');
   Object.assign(G, { playing: true, live: false, ended: false, quit: false, left: ROUND, score: 0, kills: 0, dmg: 0, combo: 0, maxCombo: 0, lastKill: -99, heat: 0, overheat: false, meteor: 0.6, tok: null, cd: {} });
   G.round = (G.round || 0) + 1; const round = G.round;
   scoreDirty = true; shownSec = -1; shownMult = 0; $('#feed').innerHTML = '';
@@ -2369,15 +2375,16 @@ function start() {
   playControls(true); tweenCam(startView(), startTarget(), 1.3);
   selectWeapon(TOUCH ? 1 : 0, true);
   quitArm = 0; $('#quitBtn').textContent = '그만';
-  window.RANK && RANK.start().then((t) => { if (G.round === round) G.tok = t; }).catch(() => {});
-  banner('시작!', '1분 동안 최대한 부수세요');
+  if (mode === 'time') window.RANK && RANK.start().then((t) => { if (G.round === round) G.tok = t; }).catch(() => {});
+  if (mode === 'free') { hud.timer.textContent = '자유'; $('#quitBtn').textContent = '끝내기'; }
+  banner('시작!', mode === 'free' ? '시간 제한 없이 마음껏' : '1분 동안 최대한 부수세요');
   setTimeout(() => { if (G.round === round && G.playing) { G.live = true; showTip(); } }, 1300);
-  try { gtag('event', 'round_start'); } catch (e) {}
+  try { gtag('event', 'round_start', { mode }); } catch (e) {}
 }
 function endRound() {
   if (G.ended) return;
   G.ended = true; G.live = false; G.left = 0; leftDown = false; reticle.visible = false;
-  banner(G.quit ? '그만!' : '끝!', fmtNum(G.score) + '점');
+  banner(G.mode === 'free' ? '끝!' : G.quit ? '그만!' : '끝!', fmtNum(G.score) + '점');
   sfxChime();
   const round = G.round;
   setTimeout(() => { if (G.round === round) finish(); }, G.quit ? 900 : GRACE * 1000);
@@ -2385,6 +2392,7 @@ function endRound() {
 let quitArm = 0;
 $('#quitBtn').addEventListener('click', () => {
   if (!G.playing || G.ended) return;
+  if (G.mode === 'free') { G.quit = true; endRound(); return; }
   if (!quitArm) { quitArm = setTimeout(() => { quitArm = 0; $('#quitBtn').textContent = '그만'; }, 2200); $('#quitBtn').textContent = '정말 그만?'; return; }
   clearTimeout(quitArm); quitArm = 0; G.quit = true; endRound();
 });
@@ -2401,12 +2409,13 @@ function finish() {
   $('#resScore').textContent = fmtNum(final.score);
   $('#resKills').textContent = final.kills + '/' + TOTAL;
   $('#resCombo').textContent = final.combo > 1 ? '×' + final.combo : '없음';
-  $('#resName').textContent = (RANK.me.name || '') + ' 이번 판 점수';
+  $('#resName').textContent = (RANK.me.name || '') + (G.mode === 'free' ? ' 자유 파괴 점수' : ' 타임어택 점수');
   $('#resBest').hidden = true; $('#resRank').textContent = '집계 중';
   $('#resNote').textContent = '';
   $('#resList').innerHTML = '<li class="empty">랭킹을 불러오는 중</li>';
   show($result, true); $result.scrollTop = 0;
   try { gtag('event', 'round_end', { value: final.score }); } catch (e) {}
+  if (G.mode === 'free') { $('#resRank').textContent = '랭킹 제외'; $('#resNote').textContent = '자유 파괴는 랭킹에 올라가지 않습니다. 랭킹은 타임어택만 집계합니다.'; loadBoard(true); return; }
   if (G.quit) { $('#resRank').textContent = '미집계'; $('#resNote').textContent = '1분을 다 채운 판만 랭킹에 올라갑니다.'; loadBoard(true); return; }
   if (!G.tok) { $('#resRank').textContent = '미집계'; $('#resNote').textContent = '랭킹 서버에 연결하지 못해 이번 판은 기록되지 않았습니다.'; loadBoard(true); return; }
   RANK.submit(G.tok, final).then((d) => {
@@ -2443,19 +2452,20 @@ $rank.addEventListener('click', (e) => { if (e.target === $rank) show($rank, fal
 
 // entry form: a nickname, remembered in this browser
 if (RANK.me.name) $('#nick').value = RANK.me.name;
-function tryStart() {
+function tryStart(mode) {
   const name = $('#nick').value.normalize('NFC').replace(/[^\p{L}\p{N} _.\-]/gu, '').replace(/\s+/g, ' ').trim(), err = $('#formErr');
   if (!name) { err.textContent = '닉네임을 적어 주세요 (한글, 영문, 숫자 10자 이내)'; $('#nick').focus(); return; }
   err.textContent = ''; $('#nick').value = name; RANK.setMe(name);
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-  start();
+  start(mode);
 }
-$('#btnStart').addEventListener('click', tryStart);
-$('#nick').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); tryStart(); } });
-$('#btnAgain').addEventListener('click', () => start());
+$('#btnStart').addEventListener('click', () => tryStart('time'));
+$('#btnFree').addEventListener('click', () => tryStart('free'));
+$('#nick').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); tryStart('time'); } });
+$('#btnAgain').addEventListener('click', () => start(G.mode));
 loadBoard(false);
 let autoStart = false;
-try { autoStart = sessionStorage.getItem('campusSmashAuto') === '1'; sessionStorage.removeItem('campusSmashAuto'); } catch (e) {}
+try { autoStart = sessionStorage.getItem('campusSmashAuto') || false; sessionStorage.removeItem('campusSmashAuto'); } catch (e) {}
 
 function toggleMute() { muted = !muted; if (master) master.gain.value = muted ? 0 : 0.7; if (muted) for (const L of loops.slice()) stopLoop(L); $('#muteBtn').textContent = muted ? '🔇' : '🔊'; }
 $('#muteBtn').addEventListener('click', toggleMute);
@@ -2484,20 +2494,21 @@ function grabView() {
   return o;
 }
 function brandShot(c, r) {
+  r = r || {};
   const x = c.getContext('2d'), W = c.width, H = c.height, u = Math.min(W, H) / 100, m = 5 * u;
   const font = (w, s) => w + ' ' + s + 'px Pretendard, "Apple SD Gothic Neo", sans-serif';
   const g = x.createLinearGradient(0, H - 36 * u, 0, H); g.addColorStop(0, 'rgba(10,12,18,0)'); g.addColorStop(1, 'rgba(10,12,18,.82)');
   x.fillStyle = g; x.fillRect(0, H - 36 * u, W, 36 * u);
   x.textBaseline = 'alphabetic'; x.shadowColor = 'rgba(0,0,0,.55)'; x.shadowBlur = u;
   x.font = font(900, 7.5 * u); x.fillStyle = '#fff'; x.fillText(fmtNum(r.score) + '점', m, H - 15 * u);
-  x.font = font(700, 3.8 * u); x.fillStyle = '#ffd36b'; x.fillText((RANK.me.name || '') + ', 건물 ' + r.kills + '채 붕괴', m, H - 9 * u);
+  x.font = font(700, 3.8 * u); x.fillStyle = '#ffd36b'; x.fillText((RANK.me.name || '') + ', 건물 ' + (r.kills || 0) + '채 붕괴' + (G.mode === 'free' ? ', 자유 파괴' : ''), m, H - 9 * u);
   x.font = font(800, 3.4 * u); x.textAlign = 'right'; x.fillStyle = '#fff'; x.fillText('캠퍼스 부수기', W - m, H - 9 * u);
   x.font = font(600, 2.7 * u); x.fillStyle = 'rgba(255,255,255,.75)'; x.fillText(SITE_URL.replace(/^https:\/\/|\/$/g, ''), W - m, H - 4.6 * u);
   x.textAlign = 'left';
 }
 const shareText = () => {
-  const d = res.data, rk = d && d.me ? ' 지금 ' + d.me.rank + '위,' : '';
-  return '캠퍼스 부수기 1분 만에 ' + fmtNum(G.score) + '점!' + rk + ' 나 이겨 봐 ';
+  const d = res.data, rk = G.mode === 'time' && d && d.me ? ' 지금 ' + d.me.rank + '위,' : '';
+  return '캠퍼스 부수기 ' + (G.mode === 'free' ? '자유 파괴로 ' : '1분 만에 ') + fmtNum(G.score) + '점!' + rk + ' 나 이겨 봐 ';
 };
 async function copyText(s) {
   try { await navigator.clipboard.writeText(s); return true; } catch (e) {}
@@ -2507,21 +2518,77 @@ async function copyText(s) {
   t.remove(); return ok;
 }
 const note = (t) => { $('#resNote').textContent = t; };
-$('#btnShare').addEventListener('click', async () => {
+// the picture viewer: a still with save and send; "다시 찍기" goes back to framing when it came from the angle mode
+const shot = { open: false, url: '', blob: null, from: '' };
+function openShot(c, from) {
+  shot.from = from; shot.open = true;
+  $('#shotAgain').hidden = from !== 'angle';
+  $('#shotTip').textContent = '';
+  c.toBlob((b) => {
+    if (!shot.open) return;
+    shot.blob = b; if (shot.url) URL.revokeObjectURL(shot.url); shot.url = URL.createObjectURL(b);
+    $('#shotPic').src = shot.url; $('#shotSend').hidden = !(TOUCH && navigator.canShare && navigator.canShare({ files: [new File([b], 'a.jpg', { type: 'image/jpeg' })] }));
+    $('#shotTip').textContent = TOUCH ? '저장이 안 되면 사진을 길게 눌러 저장하세요' : '';
+    show($('#shot'), true);
+  }, 'image/jpeg', 0.92);
+}
+function closeShot(again) {
+  shot.open = false; show($('#shot'), false);
+  if (shot.from === 'angle') { if (again) return; endAngle(); }
+}
+$('#shotClose').addEventListener('click', () => closeShot(false));
+$('#shotAgain').addEventListener('click', () => closeShot(true));
+$('#shotSave').addEventListener('click', () => { if (!shot.url) return; const a = document.createElement('a'); a.href = shot.url; a.download = 'campus-smash-' + Date.now() + '.jpg'; document.body.appendChild(a); a.click(); a.remove(); $('#shotTip').textContent = '사진을 저장했습니다'; });
+$('#shotSend').addEventListener('click', async () => {
+  if (!shot.blob) return;
+  try { await navigator.share({ files: [new File([shot.blob], 'campus-smash.jpg', { type: 'image/jpeg' })], title: '캠퍼스 부수기', text: shareText() + SITE_URL }); }
+  catch (e) { if (e.name !== 'AbortError') $('#shotTip').textContent = '보내지 못했습니다. 사진을 저장해서 보내 주세요'; }
+});
+// in the round: the 📷 button (or P) keeps the current view as a picture; the round keeps running
+function capture() {
+  if (!G.playing || shot.open) return;
+  const c = grabView(); if (!c) return;
+  brandShot(c, { score: Math.round(G.score), kills: G.kills });
+  sfxBeep(1500, 0.05); const fl = $('#flashFx'); fl.style.transition = 'none'; fl.style.opacity = '0.7'; requestAnimationFrame(() => { fl.style.transition = 'opacity .4s'; fl.style.opacity = '0'; });
+  openShot(c, 'live');
+}
+$('#capBtn').addEventListener('click', (e) => { e.stopPropagation(); capture(); });
+// 자랑하기: the result card steps aside, the camera is free, the player frames the wreckage and presses the shutter
+const angle = { on: false, p: new V3(), t: new V3() };
+function startAngle() {
+  angle.on = true; angle.p.copy(camera.position); angle.t.copy(controls.target);
+  controls.autoRotate = false; controls.enabled = true; controls.mouseButtons = MB_FREE; controls.touches.ONE = THREE.TOUCH.ROTATE; controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
+  controls.minDistance = 20; controls.maxDistance = 1400; controls.maxPolarAngle = Math.PI * 0.49;
+  show($result, false); document.body.classList.add('angle');
+  $('#angleHint').textContent = TOUCH ? '한 손가락으로 돌리고, 두 손가락으로 옮기고 확대해 앵글을 잡으세요' : '드래그로 돌리고, 우클릭 드래그로 옮기고, 휠로 확대해 앵글을 잡으세요';
+}
+function endAngle() {
+  angle.on = false; document.body.classList.remove('angle'); show($result, true);
+  controls.touches.ONE = THREE.TOUCH.PAN; controls.autoRotate = true;
+}
+function takeAngle() {
+  const c = grabView(); if (!c) { $('#angleHint').textContent = '찍지 못했습니다. 다시 눌러 주세요'; return; }
+  brandShot(c, { score: Math.round(G.score), kills: G.kills }); sfxBeep(1500, 0.05);
+  openShot(c, 'angle');
+}
+$('#btnBrag').addEventListener('click', startAngle);
+$('#angleCancel').addEventListener('click', endAngle);
+$('#angleTake').addEventListener('click', takeAngle);
+// 공유하기: the link, with a line about the score
+async function shareLink() {
   const text = shareText();
-  const file = res.blob ? new File([res.blob], 'campus-smash-' + Math.round(G.score) + '.jpg', { type: 'image/jpeg' }) : null;
   try { gtag('event', 'share'); } catch (e) {}
-  if (file && canShareFile(file)) {
-    try { await navigator.share({ files: [file], title: '캠퍼스 부수기', text: text + SITE_URL }); return; }
-    catch (e) { if (e.name === 'AbortError') return; }
-  }
   if (TOUCH && navigator.share) {
     try { await navigator.share({ title: '캠퍼스 부수기', text, url: SITE_URL }); return; }
     catch (e) { if (e.name === 'AbortError') return; }
   }
-  if (await copyText(text + SITE_URL)) note('자랑 문구와 링크를 복사했습니다. 단톡방에 붙여넣어 보세요' + (TOUCH ? '. 사진은 길게 눌러 저장할 수 있습니다' : ''));
+  if (await copyText(text + SITE_URL)) note('링크와 자랑 문구를 복사했습니다. 단톡방에 붙여넣어 보세요');
   else note('친구에게 이 주소를 보내세요: ' + SITE_URL);
-  if (!TOUCH && res.img) { const a = document.createElement('a'); a.href = res.img; a.download = 'campus-smash.jpg'; document.body.appendChild(a); a.click(); a.remove(); }
+}
+$('#btnShare').addEventListener('click', shareLink);
+$('#shareStart').addEventListener('click', async () => {
+  if (TOUCH && navigator.share) { try { await navigator.share({ title: '캠퍼스 부수기', text: '1분 동안 캠퍼스를 부수는 게임, 같이 하자 ', url: SITE_URL }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  $('#formErr').textContent = (await copyText(SITE_URL)) ? '링크를 복사했습니다' : SITE_URL;
 });
 
 // phones drop the GPU context when memory runs short or the page sits in the background; three.js rebuilds from the CPU copies once it returns
@@ -2555,7 +2622,7 @@ playControls(false);
   try { renderer.compile(scene, camera); } catch (e) { console.warn(e); }
   for (const o of tmp) scene.remove(o);
 })();
-if (autoStart && RANK.me.name) setTimeout(start, 60);
+if (autoStart && RANK.me.name) setTimeout(() => start(autoStart), 60);
 
 // ------------------------------------------------------------------ per-frame hook (called by the scene loop before render)
 function pre(dt) {
@@ -2590,7 +2657,7 @@ function fireAt(id, p) {
   G.cur = i; applyControlMode();
   if (id === 'cannon') fireCannon(); else { G.cd[id] = 0; if (id === 'meteor') G.meteor = 1; fireOnce(); }
 }
-return { audio: () => ({ SMP, AC, master, sfxBoom, sfxThunder, sfxRail, sfxCannon, sfxGlass, sfxCreak, sfxDebris }), pre, G, structs, projs, bolts, strikes, strikeBolt, explode, aimAt, surfaceAt, selectWeapon, start, endRound, WEAPONS, fireAt, collapse, collapsing, TOTAL, setAim: (p) => { aimP = p; },
+return { capture, startAngle, audio: () => ({ SMP, AC, master, sfxBoom, sfxThunder, sfxRail, sfxCannon, sfxGlass, sfxCreak, sfxDebris }), pre, G, structs, projs, bolts, strikes, strikeBolt, explode, aimAt, surfaceAt, selectWeapon, start, endRound, WEAPONS, fireAt, collapse, collapsing, TOTAL, setAim: (p) => { aimP = p; },
   hideAim: () => { reticle.visible = false; },
   stats: () => ({ pq: +PQ.toFixed(2), ema: +frameEma.toFixed(1), fire: FIRE.n, smoke: SMOKE.n, sparks: SPK.n, chunks: CHUNKS[0].n + CHUNKS[1].n, rubble: RUB[0].n + RUB[1].n, debris: debris.length, projs: projs.length }) };
 }

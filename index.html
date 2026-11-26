@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#14161c">
 <title>캠퍼스 부수기</title>
-<meta name="description" content="1분 동안 캠퍼스 건물을 최대한 많이 무너뜨리고 랭킹에 이름을 올리는 브라우저 게임. 설치 없이 링크만 열면 바로 할 수 있습니다.">
+<meta name="description" content="캠퍼스와 남산타워까지 부수는 브라우저 게임. 1분 타임어택 랭킹과 자유 파괴 모드. 설치 없이 바로 플레이.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="캠퍼스 부수기">
 <meta property="og:title" content="캠퍼스 부수기">
@@ -190,7 +190,25 @@
   #rankCard { position: relative; }
   #rankList { max-height: min(56vh, 520px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
+  /* top-right: capture next to sound */
+  #capBtn { position: absolute; right: calc(60px + var(--sar)); top: calc(10px + var(--sat)); width: 42px; height: 42px; border-radius: 13px; pointer-events: auto; font-size: 17px;
+    background: var(--panel); border: 1px solid var(--line); display: grid; place-items: center; padding: 0; }
+  body.free #timer { font-size: 15px; color: var(--gold); }
+  /* framing your own angle for 자랑하기 */
+  #angleBar { display: none; position: fixed; left: 50%; bottom: calc(14px + var(--sab)); transform: translateX(-50%); z-index: 45; width: min(420px, calc(100vw - 24px)); padding: 12px; text-align: center; }
+  body.angle #angleBar { display: block; }
+  #angleHint { font-size: 12.5px; color: var(--mute); margin-bottom: 10px; line-height: 1.45; }
+  /* picture viewer */
+  #shot { z-index: 55; }
+  #shot .card { width: min(560px, 100%); padding: 12px; }
+  #shotPic { display: block; width: 100%; border-radius: 10px; background: #000; -webkit-touch-callout: default; pointer-events: auto; }
+  #shotTip { min-height: 18px; margin: 8px 0; font-size: 12.5px; color: var(--mute); text-align: center; }
+  .btn[hidden] { display: none; }
+  .row3 { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 8px; }
+  .row3 .btn { min-height: 50px; font-size: 15px; }
+  .mode2 { display: grid; grid-template-columns: 1.35fr 1fr; gap: 8px; }
   @media (max-width: 520px) {
+    #capBtn { right: calc(10px + var(--sar)); top: calc(58px + var(--sat)); }
     .slot { width: 58px; height: 60px; border-radius: 12px; }
     .slot .ic { width: 27px; height: 27px; }
     .slot .nm { font-size: 10px; }
@@ -223,24 +241,25 @@
     <div id="scoreBox"><small>점수</small><div id="score" class="num">0</div></div>
   </div>
   <div id="mult"><span id="multTxt">연쇄 ×2</span><i id="multBar"></i></div>
+  <button id="capBtn" aria-label="화면 캡처">📷</button>
   <button id="muteBtn" aria-label="소리 켜기 끄기">🔊</button>
   <div id="feed"></div>
   <div id="banner"></div>
   <div id="wtip"></div>
   <div id="dock" class="panel"></div>
-  <div id="keys"><kbd>1</kbd>~<kbd>5</kbd> 무기 &nbsp; <kbd>드래그</kbd> 회전 &nbsp; <kbd>WASD</kbd> 이동 &nbsp; <kbd>휠</kbd> 확대</div>
+  <div id="keys"><kbd>1</kbd>~<kbd>5</kbd> 무기 &nbsp; <kbd>드래그</kbd> 회전 &nbsp; <kbd>WASD</kbd> 이동 &nbsp; <kbd>휠</kbd> 확대 &nbsp; <kbd>P</kbd> 캡처</div>
 </div>
 
 <div id="start" class="screen">
   <div class="card panel">
-    <span class="kicker">기말고사 시즌 한정 랭킹전</span>
+    <span class="kicker">기말고사 시즌 한정</span>
     <div class="title">캠퍼스 <b>부수기</b></div>
-    <p class="lead">1분 동안 캠퍼스 건물을 최대한 많이 무너뜨리세요. 한 판 최고 점수로 랭킹이 매겨집니다.</p>
+    <p class="lead">캠퍼스 건물을 무너뜨리세요. 남산과 N서울타워도 노릴 수 있습니다. 랭킹은 1분 타임어택 점수로만 매겨집니다.</p>
     <div class="weap" id="weapIntro"></div>
     <label class="field"><span>닉네임</span><input id="nick" maxlength="10" autocomplete="nickname" enterkeyhint="next" placeholder="랭킹에 보일 이름 (10자 이내)"></label>
     <div class="err" id="formErr"></div>
-    <button class="btn main" id="btnStart">시작하기<small>제한 시간 1분</small></button>
-    <div class="teaser" id="teaser"><div class="hd"><span>지금 랭킹</span><button class="link" id="openRank" style="padding:0">전체 랭킹</button></div><div id="teaserBody">불러오는 중</div></div>
+    <div class="mode2"><button class="btn main" id="btnStart">타임어택<small>1분, 랭킹 도전</small></button><button class="btn" id="btnFree">자유 파괴<small>시간 제한 없음</small></button></div>
+    <div class="teaser" id="teaser"><div class="hd"><span>타임어택 랭킹</span><span><button class="link" id="shareStart" style="padding:0 10px 0 0">공유하기</button><button class="link" id="openRank" style="padding:0">전체 랭킹</button></span></div><div id="teaserBody">불러오는 중</div></div>
   </div>
 </div>
 
@@ -253,13 +272,27 @@
       <div><small>최대 연쇄</small><b id="resCombo" class="num">0</b></div>
       <div><small>전체 순위</small><b id="resRank" class="num">집계 중</b></div>
     </div>
-    <div class="row">
+    <div class="row3">
       <button class="btn main" id="btnAgain">다시 하기</button>
-      <button class="btn" id="btnShare">자랑하기</button>
+      <button class="btn" id="btnBrag">자랑하기</button>
+      <button class="btn" id="btnShare">공유하기</button>
     </div>
     <div class="sect">랭킹</div>
     <ul class="board" id="resList"></ul>
     <div class="note" id="resNote"></div>
+  </div>
+</div>
+
+<div id="angleBar" class="panel">
+  <div id="angleHint"></div>
+  <div class="row"><button class="btn" id="angleCancel">취소</button><button class="btn main" id="angleTake">📷 찍기</button></div>
+</div>
+
+<div id="shot" class="screen hide">
+  <div class="card panel">
+    <img id="shotPic" alt="캡처한 캠퍼스">
+    <div id="shotTip"></div>
+    <div class="row"><button class="btn main" id="shotSave">사진 저장</button><button class="btn" id="shotSend" hidden>보내기</button><button class="btn" id="shotAgain" hidden>다시 찍기</button><button class="btn" id="shotClose">닫기</button></div>
   </div>
 </div>
 
@@ -268,20 +301,20 @@
     <button class="x" id="rankClose" aria-label="닫기">✕</button>
     <div class="title" style="font-size:26px">랭킹</div>
     <div id="rankList"><ul class="board" id="rankUl"></ul></div>
-    <div class="note">한 판 최고 점수로 매깁니다. 1분을 다 채운 판만 올라갑니다.</div>
+    <div class="note">타임어택 한 판 최고 점수로 매깁니다. 1분을 다 채운 판만 올라가고, 자유 파괴는 집계하지 않습니다.</div>
   </div>
 </div>
 
 <div id="loading" class="show"><div class="box"><div class="logo">캠퍼스 <b>부수기</b></div><div class="bar"><i id="loadBar"></i></div><div id="loadTxt">불러오는 중</div><button class="btn main" id="reloadBtn" hidden style="margin-top:14px">새로고침</button></div></div>
 
 <script src="js/three.min.js"></script>
-<script src="js/orbit.js"></script>
-<script src="js/rank.js"></script>
+<script src="js/orbit.js?v=10"></script>
+<script src="js/rank.js?v=10"></script>
 <script>document.getElementById('loadBar').style.width = '25%';</script>
 <script src="data/campus.js"></script>
 <script>document.getElementById('loadBar').style.width = '55%';</script>
-<script src="js/world.js"></script>
+<script src="js/world.js?v=10"></script>
 <script src="js/sfx.js"></script>
-<script src="js/game.js"></script>
+<script src="js/game.js?v=10"></script>
 </body>
 </html>

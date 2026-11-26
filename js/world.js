@@ -617,12 +617,29 @@ function namsanF(x, z) {
   return Math.exp(-r2 * 1.25) * (1 + n * 0.45) * (1 - 0.15 * Math.exp(-r2 * 30));
 }
 const namsanH = (x, z) => CLOUD_Y + (NAMSAN.peak - CLOUD_Y) * (namsanF(x, z) - 0.3) / 0.7;
+const NS_MESH = {};
+function namsanSurf(x, z) {
+  const dx = x - NAMSAN.x, dz = z - NAMSAN.z, r = Math.hypot(dx, dz), t = Math.atan2(dz, dx);
+  const gul = Math.abs(Math.sin(t * 9 + r * 0.004)) * 14 + Math.abs(Math.sin(t * 23 - r * 0.009)) * 6;
+  return namsanH(x, z) - gul * Math.min(1, r / 300);
+}
+// a hit on the mountain: the ground sinks a little and goes dark around the spot (the mesh is coarse, so it is a soft dent)
+function namsanHit(x, z, R) {
+  const m = NS_MESH; if (!m.pos) return false;
+  if (namsanSurf(x, z) < CLOUD_Y + 2) return false;
+  const P = m.pos.array, C = m.col.array, rr = Math.max(R * 1.6, 26);
+  for (let i = 0; i < P.length / 3; i++) {
+    const dx = P[i * 3] - x, dz = P[i * 3 + 2] - z, d = Math.hypot(dx, dz); if (d > rr) continue;
+    const k = 1 - d / rr; P[i * 3 + 1] -= R * 0.18 * k; for (let c = 0; c < 3; c++) C[i * 3 + c] *= 1 - 0.55 * k;
+  }
+  m.pos.needsUpdate = true; m.col.needsUpdate = true; m.geo.computeVertexNormals();
+  return true;
+}
 function buildNamsan() {
   const R = 1250, NR = 40, NA = 80, pos = [], col = [], idx = [], c = new THREE.Color(), A = lin('#2c4a26'), B = lin('#4d6632');
   for (let i = 0; i <= NR; i++) for (let a = 0; a < NA; a++) {
     const r = R * Math.pow(i / NR, 1.3), t = a / NA * Math.PI * 2, x = NAMSAN.x + Math.cos(t) * r, z = NAMSAN.z + Math.sin(t) * r;
-    const gul = Math.abs(Math.sin(t * 9 + r * 0.004)) * 14 + Math.abs(Math.sin(t * 23 - r * 0.009)) * 6;
-    pos.push(x, namsanH(x, z) - gul * Math.min(1, r / 300), z);
+    pos.push(x, namsanSurf(x, z), z);
     const n = Math.sin(x * 0.03 + z * 0.02) * 0.5 + 0.5; c.copy(A).lerp(B, n); col.push(c.r, c.g, c.b);
   }
   for (let i = 0; i < NR; i++) for (let a = 0; a < NA; a++) { const p = i * NA + a, q = i * NA + (a + 1) % NA; idx.push(p, q, p + NA, q, q + NA, p + NA); }   // counter-clockwise seen from above
@@ -637,7 +654,8 @@ function buildNamsan() {
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.42, 0.33, 0.18), smoothstep(0.55, 0.9, vn(vWp * vec3(0.012, 0.0, 0.012) + 3.0)) * 0.16);   // autumn patches
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.55, 0.53, 0.5), smoothstep(0.22, 0.08, vWn.y) * 0.3);   // bare rock on the steep bits`);
   };
-  scene.add(new THREE.Mesh(geo, mm));
+  const nm = new THREE.Mesh(geo, mm); nm.name = 'namsan'; nm.receiveShadow = true; scene.add(nm);
+  Object.assign(NS_MESH, { geo, pos: geo.attributes.position, col: geo.attributes.color });
   // N Seoul Tower: base building, tapering shaft, observation drum with its window band, striped antenna mast
   const g = new THREE.Group(), y0 = namsanH(TOWER.x, TOWER.z) - 2;
   const conc = new THREE.MeshLambertMaterial({ color: lin('#f4f2ee'), emissive: lin('#3a3836') }), dark = new THREE.MeshLambertMaterial({ color: lin('#2e3a48'), emissive: lin('#1c2a3c') }), red = new THREE.MeshLambertMaterial({ color: lin('#e0402e'), emissive: lin('#4a1208') });
@@ -653,6 +671,9 @@ function buildNamsan() {
   // drawn a little stouter than life: at 1.5 km the real shaft is a hairline, and the tower is how people know the place
   g.scale.set(2.2, 1.12, 2.2);
   g.position.set(TOWER.x, y0, TOWER.z); g.name = 'tower'; scene.add(g);
+  const info = { name: 'N서울타워', en: 'N Seoul Tower', top: y0 + 270, base: y0, pos: new THREE.Vector3(TOWER.x, y0 + 290, TOWER.z), big: true };
+  g.traverse((o) => { if (o.isMesh) { o.userData.info = info; o.castShadow = false; } });
+  TRAD.push(Object.assign(info, { towerLabel: true }));
 }
 function buildBackdrop() { buildCliffs(); buildClouds(); buildNamsan(); }
 
@@ -1188,7 +1209,7 @@ function buildLabels() {
     if (a.place) addLabel(nm, new THREE.Vector3(a.p[0], y + 8, a.p[1]), 'place');
     else addLabel(nm, new THREE.Vector3(a.p[0], y + 6, a.p[1]), 'minor');
   }
-  for (const t of TRAD) t.label = addLabel(t.name, t.pos.clone(), 'campus heritage', t);
+  for (const t of TRAD) t.label = addLabel(t.name, t.pos.clone(), t.towerLabel ? 'campus' : 'campus heritage', t);
   const pj = M.art.filter((a) => /관세음|코끼리/.test(a.n));
   if (pj.length) { const x = pj.reduce((s, a) => s + a.p[0], 0) / pj.length, z = pj.reduce((s, a) => s + a.p[1], 0) / pj.length; addLabel('팔정도', new THREE.Vector3(x, getH(x, z) + 12, z), 'place'); }
   for (const g of M.gates) addLabel(g.n.replace(/^.*대학교/, ''), new THREE.Vector3(g.p[0], getH(g.p[0], g.p[1]) + 6, g.p[1]), 'gate');
@@ -1322,7 +1343,7 @@ function updateLabels() {
   const W = innerWidth, H = innerHeight;
   for (const l of labels) {
     tv.copy(l.pos).project(camera);
-    const d = camera.position.distanceTo(l.pos), maxD = l.cls === 'minor' ? 250 : l.cls === 'gate' ? 600 : 1400;
+    const d = camera.position.distanceTo(l.pos), maxD = l.cls === 'minor' ? 250 : l.cls === 'gate' ? 600 : l.info && l.info.big ? 4000 : 1400;
     if (tv.z > 1 || Math.abs(tv.x) > 1.1 || Math.abs(tv.y) > 1.1 || d > maxD) { setSt(l, 'display', 'none'); continue; }
     setSt(l, 'display', '');
     setSt(l, 'transform', 'translate(' + Math.round((tv.x + 1) / 2 * W) + 'px,' + Math.round((1 - tv.y) / 2 * H) + 'px)');
@@ -1365,5 +1386,5 @@ function loop(now) { if (!(window.__v2 && window.__v2.paused)) frame(now); reque
     
   } catch (err) { console.error(err); $('#loadTxt').textContent = '오류: ' + err.message; }
 })();
-window.__v2 = { scene, camera, controls, renderer, getH, getH0, buildings, overview, frame: () => frame(performance.now()), TREES, SCORCH, HF, DW, DH, X0, Z0, CAMPUS, BASEY, inPoly, labels, TRAD, sun, M, CLIFF_Y, stats: () => ({ pr: PR, frameAvg: +frameAvg.toFixed(1) }) };
+window.__v2 = { namsanSurf, namsanHit, CLOUD_Y, scene, camera, controls, renderer, getH, getH0, buildings, overview, frame: () => frame(performance.now()), TREES, SCORCH, HF, DW, DH, X0, Z0, CAMPUS, BASEY, inPoly, labels, TRAD, sun, M, CLIFF_Y, stats: () => ({ pr: PR, frameAvg: +frameAvg.toFixed(1) }) };
 })();
