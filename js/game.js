@@ -2390,7 +2390,7 @@ window.addEventListener('pointerup', twistEnd); window.addEventListener('pointer
 // ------------------------------------------------------------------ 무자비 풀소유: a monk in grey robes walks the campus in third person.
 // The weapons still fire the usual way (from the gun positions and out of the sky, at the point you aim at); only the viewpoint
 // rides along with him. Phones get a stick on the left; the keyboard uses WASD.
-const MONK_K = 1.6, MONK_HEAD = 2.75, MONK_WALK = 9, MONK_RUN = 17;
+const MONK_K = 1.25, MONK_HEAD = 1.2, MONK_WALK = 7, MONK_RUN = 13;
 const monk = { on: false, pos: new V3(), yaw: 0, walkT: 0, spd: 0, mesh: null, parts: null, step: 0, joy: { id: null, x: 0, y: 0 } };
 function buildMonk() {
   const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
@@ -2398,28 +2398,29 @@ function buildMonk() {
   const robe = std('#8f928d'), kasa = std('#8a4724', 0.75), skin = std('#f0c9a2', 0.5), bead = std('#4a2b17', 0.4), shoe = std('#f3f2ec', 0.45), wood = std('#a0622c', 0.5);
   const ink = new THREE.MeshBasicMaterial({ color: 0x1c1410 });
   const add = (geo, m, x, y, z, parent) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; (parent || body).add(o); return o; };
-  add(new THREE.CylinderGeometry(0.25, 0.42, 0.98, 18), robe, 0, 0.6, 0);                       // long robe
-  add(new THREE.CylinderGeometry(0.235, 0.26, 0.52, 18), robe, 0, 1.33, 0);                    // upper body
-  add(new THREE.CylinderGeometry(0.265, 0.285, 0.09, 18), kasa, 0, 1.08, 0);                   // sash at the waist
-  const k = add(new THREE.CylinderGeometry(0.255, 0.28, 0.16, 18, 1, true), new THREE.MeshStandardMaterial({ color: lin('#8a4724'), roughness: 0.75, side: THREE.DoubleSide }), 0, 1.33, 0);
+  // a little 동자승: big round head, short body, about 1.2 m tall
+  add(new THREE.CylinderGeometry(0.16, 0.25, 0.42, 18), robe, 0, 0.27, 0);                      // robe
+  add(new THREE.CylinderGeometry(0.15, 0.17, 0.26, 18), robe, 0, 0.6, 0);                       // upper body
+  add(new THREE.CylinderGeometry(0.172, 0.182, 0.05, 18), kasa, 0, 0.49, 0);                    // sash at the waist
+  const k = add(new THREE.CylinderGeometry(0.162, 0.176, 0.09, 18, 1, true), new THREE.MeshStandardMaterial({ color: lin('#8a4724'), roughness: 0.75, side: THREE.DoubleSide }), 0, 0.6, 0);
   k.rotation.z = 0.62;                                                                         // 가사 across the chest
-  add(new THREE.CylinderGeometry(0.07, 0.08, 0.1, 10), skin, 0, 1.63, 0);
-  const head = add(new THREE.SphereGeometry(0.175, 20, 14), skin, 0, 1.8, 0); head.scale.set(1, 1.04, 1);
+  const head = add(new THREE.SphereGeometry(0.2, 22, 16), skin, 0, 0.9, 0); head.scale.set(1.05, 1, 1);
   for (const s of [-1, 1]) {
-    add(new THREE.SphereGeometry(0.045, 8, 6), skin, s * 0.172, 1.79, 0);                       // ears
-    const eye = add(new THREE.BoxGeometry(0.055, 0.012, 0.01), ink, s * 0.062, 1.82, 0.168);    // calm, closed eyes
-    eye.rotation.z = s * -0.12;
+    add(new THREE.SphereGeometry(0.045, 8, 6), skin, s * 0.205, 0.89, 0);                       // ears
+    const eye = add(new THREE.BoxGeometry(0.05, 0.013, 0.01), ink, s * 0.07, 0.92, 0.19);      // calm, closed eyes
+    eye.rotation.z = s * -0.15;
+    const ck = add(new THREE.SphereGeometry(0.032, 8, 6), std('#f2a5a0', 0.6), s * 0.115, 0.86, 0.165); ck.scale.set(1, 0.6, 0.4);   // rosy cheeks
   }
-  const smile = add(new THREE.TorusGeometry(0.04, 0.007, 4, 10, Math.PI), ink, 0, 1.75, 0.165); smile.rotation.z = Math.PI;
-  const beads = add(new THREE.TorusGeometry(0.19, 0.024, 6, 22), bead, 0, 1.47, 0.04); beads.rotation.x = Math.PI / 2 - 0.45;   // 염주
+  const smile = add(new THREE.TorusGeometry(0.028, 0.006, 4, 10, Math.PI), ink, 0, 0.845, 0.192); smile.rotation.z = Math.PI;
+  const beads = add(new THREE.TorusGeometry(0.13, 0.018, 6, 22), bead, 0, 0.71, 0.03); beads.rotation.x = Math.PI / 2 - 0.45;   // 염주
   const arms = [], feet = [];
   for (const s of [-1, 1]) {
-    const a = new THREE.Group(); a.position.set(s * 0.29, 1.52, 0); body.add(a);
-    const sl = add(new THREE.CylinderGeometry(0.075, 0.15, 0.56, 12), robe, 0, -0.27, 0, a); sl.rotation.z = s * 0.1;
-    add(new THREE.SphereGeometry(0.058, 10, 8), skin, s * 0.03, -0.58, 0.01, a);
-    if (s > 0) { const mk = add(new THREE.SphereGeometry(0.09, 12, 8), wood, 0.04, -0.66, 0.07, a); mk.scale.set(1, 0.8, 0.9); }   // 목탁
+    const a = new THREE.Group(); a.position.set(s * 0.18, 0.69, 0); body.add(a);
+    const sl = add(new THREE.CylinderGeometry(0.05, 0.1, 0.3, 12), robe, 0, -0.15, 0, a); sl.rotation.z = s * 0.12;
+    add(new THREE.SphereGeometry(0.045, 10, 8), skin, s * 0.02, -0.32, 0.01, a);
+    if (s > 0) { const mk = add(new THREE.SphereGeometry(0.065, 12, 8), wood, 0.03, -0.38, 0.05, a); mk.scale.set(1, 0.8, 0.9); }   // 목탁
     arms.push(a);
-    const f = add(new THREE.BoxGeometry(0.11, 0.08, 0.26), shoe, s * 0.11, 0.04, 0.04, g); feet.push(f);   // 고무신
+    const f = add(new THREE.BoxGeometry(0.08, 0.06, 0.17), shoe, s * 0.075, 0.03, 0.03, g); feet.push(f);   // 고무신
   }
   g.scale.setScalar(MONK_K);
   monk.parts = { body, arms, feet };
@@ -2458,7 +2459,7 @@ function setMonk(on, instant) {
     scene.add(monk.mesh); poseMonk(0);
     const head = monk.pos.clone().add(_v.set(0, MONK_HEAD, 0));
     playControls(true);
-    tweenCam(head.clone().add(_v.set(-Math.sin(monk.yaw) * 13, 4.5, -Math.cos(monk.yaw) * 13)), head, 1.1);
+    tweenCam(head.clone().add(_v.set(-Math.sin(monk.yaw) * 7, 2.4, -Math.cos(monk.yaw) * 7)), head, 1.1);
     sfxMoktak(); banner('무자비 풀소유', '스님 시점으로 캠퍼스를 걸어 다닙니다');
   } else {
     if (monk.mesh) scene.remove(monk.mesh);
@@ -2473,10 +2474,10 @@ function poseMonk(dt) {
   const m = monk.mesh, P = monk.parts; if (!m) return;
   m.position.copy(monk.pos); m.rotation.y = monk.yaw;
   const w = clamp(monk.spd / MONK_WALK, 0, 1.6), s = Math.sin(monk.walkT);
-  P.body.position.y = Math.abs(s) * 0.05 * w; P.body.rotation.x = 0.06 * w;
-  P.arms[0].rotation.x = s * 0.55 * w; P.arms[1].rotation.x = -s * 0.55 * w;
-  P.feet[0].position.z = 0.04 + s * 0.2 * w; P.feet[1].position.z = 0.04 - s * 0.2 * w;
-  P.feet[0].position.y = 0.04 + Math.max(0, s) * 0.08 * w; P.feet[1].position.y = 0.04 + Math.max(0, -s) * 0.08 * w;
+  P.body.position.y = Math.abs(s) * 0.035 * w; P.body.rotation.x = 0.06 * w; P.body.rotation.z = s * 0.06 * w;   // a toddling waddle
+  P.arms[0].rotation.x = s * 0.6 * w; P.arms[1].rotation.x = -s * 0.6 * w;
+  P.feet[0].position.z = 0.03 + s * 0.12 * w; P.feet[1].position.z = 0.03 - s * 0.12 * w;
+  P.feet[0].position.y = 0.03 + Math.max(0, s) * 0.05 * w; P.feet[1].position.y = 0.03 + Math.max(0, -s) * 0.05 * w;
 }
 function monkStep(dt) {
   let ix = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0), iz = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
@@ -2535,7 +2536,7 @@ joyEl.addEventListener('pointerup', joyUp); joyEl.addEventListener('pointercance
 
 // ------------------------------------------------------------------ elephants on Namsan: big round cartoon elephants ambling over the slope that
 // faces the campus. Any weapon can knock one flying; it comes back a little later somewhere else. They score nothing (only the tower does).
-const NS_C = { x: -1000, z: 805 }, ELE_S = 34, ELE_N = window.LITE ? 4 : 6;
+const NS_C = { x: -1000, z: 805 }, ELE_S = 22, ELE_N = 4;
 const ELE_A = Math.atan2(CZc - NS_C.z, CXc - NS_C.x);
 const eleMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 function partGeo(geo, m4, hex) {
@@ -2553,27 +2554,30 @@ function mergeGeos(list) {
   out.computeBoundingSphere(); return out;
 }
 const M4 = (x, y, z, sx, sy, sz, rx, ry, rz) => new THREE.Matrix4().compose(new V3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx || 0, ry || 0, rz || 0)), new V3(sx, sy == null ? sx : sy, sz == null ? sx : sz));
-// one elephant is two geometries: the body with head, ears, trunk and face baked together, and one leg (drawn four times)
-function eleGeos(hex, earHex) {
+// elephants that walk upright like people. Each is three geometries: the body with head, ears, trunk and face baked together,
+// one leg (drawn twice) and one arm (drawn twice), so the limbs can swing
+function eleGeos(hex, earHex, bellyHex) {
   const S = () => new THREE.SphereGeometry(1, 18, 12), parts = [];
-  parts.push(partGeo(S(), M4(0, 0.6, 0, 0.38, 0.33, 0.47), hex));                                   // body
-  parts.push(partGeo(S(), M4(0, 0.86, 0.46, 0.28, 0.27, 0.26), hex));                               // head
+  parts.push(partGeo(S(), M4(0, 0.56, 0, 0.22, 0.27, 0.19), hex));                                  // round upright body
+  parts.push(partGeo(S(), M4(0, 0.52, 0.085, 0.15, 0.18, 0.11), bellyHex));                         // pale belly
+  parts.push(partGeo(S(), M4(0, 0.93, 0.03, 0.23, 0.21, 0.2), hex));                                 // head
   for (const s of [-1, 1]) {
-    parts.push(partGeo(S(), M4(s * 0.28, 0.86, 0.38, 0.05, 0.25, 0.21, 0, s * 0.4, 0), hex));       // ears
-    parts.push(partGeo(S(), M4(s * 0.3, 0.86, 0.41, 0.03, 0.18, 0.15, 0, s * 0.4, 0), earHex));     // pink inside
-    parts.push(partGeo(S(), M4(s * 0.12, 0.93, 0.69, 0.045), '#1e1a1c'));                            // eyes
-    parts.push(partGeo(S(), M4(s * 0.112, 0.945, 0.725, 0.014), '#ffffff'));                         // eye shine
-    parts.push(partGeo(S(), M4(s * 0.18, 0.8, 0.64, 0.055, 0.04, 0.03), '#f2a8b2'));                 // cheeks
-    parts.push(partGeo(new THREE.ConeGeometry(0.03, 0.14, 8), M4(s * 0.1, 0.7, 0.7, 1, 1, 1, 2.1, 0, 0), '#f4f0e6'));   // tusks
+    parts.push(partGeo(S(), M4(s * 0.25, 0.95, -0.02, 0.17, 0.19, 0.035), hex));                     // big round ears
+    parts.push(partGeo(S(), M4(s * 0.25, 0.95, 0.008, 0.12, 0.14, 0.03), earHex));                    // pink inside
+    parts.push(partGeo(S(), M4(s * 0.085, 0.97, 0.2, 0.034), '#1e1a1c'));                             // eyes
+    parts.push(partGeo(S(), M4(s * 0.08, 0.982, 0.228, 0.011), '#ffffff'));                           // eye shine
+    parts.push(partGeo(S(), M4(s * 0.14, 0.89, 0.17, 0.04, 0.028, 0.02), '#f2a8b2'));                 // cheeks
+    parts.push(partGeo(new THREE.ConeGeometry(0.018, 0.08, 8), M4(s * 0.06, 0.82, 0.2, 1, 1, 1, 2.0, 0, 0), '#f4f0e6'));   // tusks
   }
-  parts.push(partGeo(new THREE.CylinderGeometry(0.07, 0.11, 0.42, 12), M4(0, 0.6, 0.75, 1, 1, 1, 0.45, 0, 0), hex));   // trunk
-  parts.push(partGeo(S(), M4(0, 0.42, 0.85, 0.08, 0.06, 0.08), hex));                                // trunk tip
-  parts.push(partGeo(new THREE.CylinderGeometry(0.014, 0.02, 0.22, 6), M4(0, 0.6, -0.52, 1, 1, 1, -0.6, 0, 0), hex));   // tail
-  parts.push(partGeo(S(), M4(0, 0.51, -0.6, 0.035), '#55505a'));
-  const leg = mergeGeos([partGeo(new THREE.CylinderGeometry(0.11, 0.12, 0.4, 12), M4(0, -0.2, 0, 1), hex), partGeo(new THREE.CylinderGeometry(0.124, 0.124, 0.04, 12), M4(0, -0.4, 0, 1), '#e2ddd3')]);
-  return { body: mergeGeos(parts), leg };
+  parts.push(partGeo(new THREE.CylinderGeometry(0.04, 0.06, 0.22, 12), M4(0, 0.8, 0.23, 1, 1, 1, 0.3, 0, 0), hex));   // trunk
+  parts.push(partGeo(S(), M4(0, 0.69, 0.265, 0.045, 0.035, 0.045), hex));                            // trunk tip
+  parts.push(partGeo(new THREE.CylinderGeometry(0.01, 0.014, 0.14, 6), M4(0, 0.38, -0.2, 1, 1, 1, -0.7, 0, 0), hex));   // tail
+  parts.push(partGeo(S(), M4(0, 0.33, -0.25, 0.025), '#55505a'));
+  const leg = mergeGeos([partGeo(new THREE.CylinderGeometry(0.075, 0.08, 0.3, 12), M4(0, -0.15, 0, 1), hex), partGeo(S(), M4(0, -0.3, 0.03, 0.09, 0.045, 0.11), '#e2ddd3')]);
+  const arm = mergeGeos([partGeo(new THREE.CylinderGeometry(0.05, 0.055, 0.26, 10), M4(0, -0.13, 0, 1), hex), partGeo(S(), M4(0, -0.27, 0, 0.06), hex)]);
+  return { body: mergeGeos(parts), leg, arm };
 }
-const ELE_KINDS = [eleGeos('#a7b2c1', '#f0b6c0'), eleGeos('#9aa3ad', '#efb0ba'), eleGeos('#efc0cc', '#f7d9e0')];
+const ELE_KINDS = [eleGeos('#a7b2c1', '#f0b6c0', '#dfe4ea'), eleGeos('#9aa3ad', '#efb0ba', '#d8dbe0'), eleGeos('#efc0cc', '#f7d9e0', '#fbe6ec')];
 const eles = [];
 function eleOk(x, z) {
   const dx = x - NS_C.x, dz = z - NS_C.z, r = Math.hypot(dx, dz);
@@ -2587,9 +2591,10 @@ function eleSpot() {
 for (let i = 0; i < ELE_N; i++) {
   const K = ELE_KINDS[i === 2 ? 2 : i % 2], g = new THREE.Group();
   g.add(new THREE.Mesh(K.body, eleMat));
-  const legs = [[-0.2, 0.25], [0.2, 0.25], [-0.2, -0.25], [0.2, -0.25]].map(([x, z]) => { const l = new THREE.Mesh(K.leg, eleMat); l.position.set(x, 0.42, z); g.add(l); return l; });
-  const sc = ELE_S * rand(0.85, 1.15), p = eleSpot(); g.position.copy(p); g.scale.setScalar(sc); scene.add(g);
-  eles.push({ g, legs, sc, h: rand(0, 6.28), sp: rand(5, 8), ph: rand(0, 6), turn: 0, state: 'walk', t: 0, vel: new V3(), spin: new V3(), back: 0 });
+  const legs = [-1, 1].map((s) => { const l = new THREE.Mesh(K.leg, eleMat); l.position.set(s * 0.1, 0.32, 0); g.add(l); return l; });
+  const arms = [-1, 1].map((s) => { const a = new THREE.Mesh(K.arm, eleMat); a.position.set(s * 0.22, 0.7, 0); a.rotation.z = s * 0.2; g.add(a); return a; });
+  const sc = ELE_S * rand(0.9, 1.1), p = eleSpot(); g.position.copy(p); g.scale.setScalar(sc); scene.add(g);
+  eles.push({ g, legs, arms, sc, h: rand(0, 6.28), sp: rand(4, 6), ph: rand(0, 6), turn: 0, state: 'walk', t: 0, vel: new V3(), spin: new V3(), back: 0 });
 }
 function stepElephants(dt) {
   for (const e of eles) {
@@ -2606,10 +2611,10 @@ function stepElephants(dt) {
       else { const a = Math.atan2(NS_C.x + Math.cos(ELE_A) * 350 - e.g.position.x, NS_C.z + Math.sin(ELE_A) * 350 - e.g.position.z); e.h = a + rand(-0.6, 0.6); }   // turn back toward the middle of the slope
       e.g.position.y = V.namsanSurf(e.g.position.x, e.g.position.z) - 1.5;
       let d = e.h - e.g.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); e.g.rotation.y += d * Math.min(1, dt * 2);
-      e.ph += dt * e.sp * 0.32;
-      const sw = Math.sin(e.ph) * 0.42;
-      e.legs[0].rotation.x = sw; e.legs[3].rotation.x = sw; e.legs[1].rotation.x = -sw; e.legs[2].rotation.x = -sw;
-      e.g.children[0].position.y = Math.abs(Math.cos(e.ph)) * 0.025;
+      e.ph += dt * e.sp * 6.28 / (e.sc * 0.6);                        // two steps per cycle
+      const sw = Math.sin(e.ph) * 0.55;
+      e.legs[0].rotation.x = sw; e.legs[1].rotation.x = -sw; e.arms[0].rotation.x = -sw * 0.8; e.arms[1].rotation.x = sw * 0.8;
+      const body = e.g.children[0]; body.position.y = Math.abs(Math.cos(e.ph)) * 0.03; body.rotation.z = Math.sin(e.ph) * 0.06;   // a side-to-side waddle
     } else if (e.state === 'fly') {
       e.vel.y -= 55 * dt; e.g.position.addScaledVector(e.vel, dt);
       e.g.rotation.x += e.spin.x * dt; e.g.rotation.y += e.spin.y * dt; e.g.rotation.z += e.spin.z * dt;
@@ -2674,7 +2679,7 @@ function applyControlMode() {
 function playControls(on) {
   controls.enabled = true; controls.autoRotate = !on; controls.autoRotateSpeed = 0.5;
   controls.screenSpacePanning = false;
-  if (on && monk.on) { controls.minDistance = 5; controls.maxDistance = 70; controls.maxPolarAngle = Math.PI * 0.5; }
+  if (on && monk.on) { controls.minDistance = 3; controls.maxDistance = 60; controls.maxPolarAngle = Math.PI * 0.5; }
   else if (on) { controls.minDistance = 25; controls.maxDistance = 900; controls.maxPolarAngle = Math.PI * 0.46; }
   applyControlMode();
 }
