@@ -1481,7 +1481,8 @@ function coolDown() {
 // ------------------------------------------------------------------ explosions and structural damage
 function applyDamage(p, R, power, o) {
   o = o || {};
-  if (!inCampusAt(p.x, p.z) && V.namsanHit(p.x, p.z, R)) { addScore(Math.round(R * 6), 0, true); if (Math.random() < 0.4) addFire(p.x, p.y, p.z, rand(4, 8), R * 0.6, null, true); }
+  // the mountain itself takes dents and scorch but scores nothing; only the tower (a structure) counts
+  if (!inCampusAt(p.x, p.z) && V.namsanHit(p.x, p.z, R)) { if (Math.random() < 0.4) addFire(p.x, p.y, p.z, rand(4, 8), R * 0.6, null, true); }
   const Rg = o.laser ? R : R * 2.4;
   for (const S of structs) {
     if (S.dead) continue;
