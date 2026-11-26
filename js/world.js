@@ -1165,7 +1165,11 @@ function buildTrees() {
 const RENAME = { '사회과학관.경영관': '사회과학관/경영관', '상록원 학생식당': '상록원', '정보문화관(P)': '정보문화관 P', '정보문화관(Q)': '정보문화관 Q', '학림관(J)': '학림관', 'MediaCenter': '미디어센터', '만해관': '만해관/법학관', '모 대학교 박물관': '박물관' };
 const SKIP = new Set(['카페쎄리오', '카페보니애', 'MediaCenter', '모 대학교종각', '정각원']);
 const labelsEl = $('#labels'); const labels = [];
+// name tags over the buildings are off: on a phone they covered the very buildings you were aiming at. The names still feed the
+// collapse messages (info.name); only the floating tags are gone.
+const SHOW_LABELS = false;
 function addLabel(text, pos, cls, info) {
+  if (!SHOW_LABELS) return null;
   const el = document.createElement('div'); el.className = 'lbl ' + (cls || ''); el.innerHTML = '<span>' + text + '</span>';
   labelsEl.appendChild(el);
   const L = { el, pos, cls, info };

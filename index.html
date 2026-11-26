@@ -120,6 +120,15 @@
   .slot .bar { position: absolute; left: 8px; right: 8px; bottom: 5px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.14); overflow: hidden; z-index: 1; }
   .slot .bar b { display: block; height: 100%; width: 0; background: var(--gold); }
   .slot.empty .ic, .slot.empty .nm { opacity: .45; }
+  .slot.monkslot { margin-left: 4px; }
+  .slot.monkslot .ic { width: 26px; height: 26px; }
+  .slot.monkslot .nm { font-size: 9.5px; line-height: 1.1; text-align: center; }
+  .slot.monkslot.sel { border-color: #c98a52; background: rgba(160,84,42,.3); }
+  /* thumb stick for walking the monk (phones only) */
+  #joy { display: none; position: absolute; left: calc(18px + var(--sal)); bottom: calc(104px + var(--sab)); width: 118px; height: 118px; border-radius: 50%;
+    background: rgba(18,20,27,.32); border: 1px solid rgba(255,255,255,.28); pointer-events: auto; touch-action: none; }
+  #joy i { position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; margin: -25px 0 0 -25px; border-radius: 50%; background: rgba(255,255,255,.82); }
+  body.touch.monk #joy { display: block; }
   .slot.ready { animation: glow 1.1s ease-in-out infinite; }
   @keyframes glow { 50% { box-shadow: 0 0 0 2px rgba(255,211,107,.8), 0 0 22px rgba(255,140,40,.85); } }
   #wtip { position: absolute; left: 50%; bottom: calc(96px + var(--sab)); transform: translateX(-50%); font-size: 12.5px; font-weight: 600; padding: 7px 14px; border-radius: 12px;
@@ -156,7 +165,7 @@
   .teaser { margin-top: 14px; padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,.05); font-size: 13px; line-height: 1.55; }
   .teaser b { color: var(--gold); }
   .teaser .hd { display: flex; justify-content: space-between; align-items: center; font-weight: 800; margin-bottom: 4px; }
-  .weap { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 0 0 14px; }
+  .weap { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin: 0 0 14px; }
   .weap div { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--mute); }
   .weap svg { width: 30px; height: 30px; }
 
@@ -209,10 +218,13 @@
   .mode2 { display: grid; grid-template-columns: 1.35fr 1fr; gap: 8px; }
   @media (max-width: 520px) {
     #capBtn { right: calc(10px + var(--sar)); top: calc(58px + var(--sat)); }
-    .slot { width: 58px; height: 60px; border-radius: 12px; }
-    .slot .ic { width: 27px; height: 27px; }
+    .slot { width: 52px; height: 60px; border-radius: 12px; }
+    .slot .ic { width: 26px; height: 26px; }
     .slot .nm { font-size: 10px; }
-    #dock { gap: 5px; padding: 5px; }
+    .slot.monkslot { margin-left: 2px; }
+    .slot.monkslot .ic { width: 22px; height: 22px; }
+    .slot.monkslot .nm { font-size: 9px; }
+    #dock { gap: 4px; padding: 5px; }
     #wtip { bottom: calc(86px + var(--sab)); }
     #score { font-size: 22px; }
     #timer { font-size: 20px; min-width: 64px; }
@@ -224,6 +236,7 @@
     .screen { align-items: flex-start; }
     #dock { left: auto; right: calc(10px + var(--sar)); transform: none; bottom: calc(8px + var(--sab)); }
     #wtip { left: calc(14px + var(--sal)); transform: none; bottom: 14px; }
+    #joy { bottom: calc(14px + var(--sab)); }
   }
 </style>
 </head>
@@ -247,14 +260,15 @@
   <div id="banner"></div>
   <div id="wtip"></div>
   <div id="dock" class="panel"></div>
-  <div id="keys"><kbd>1</kbd>~<kbd>5</kbd> 무기 &nbsp; <kbd>드래그</kbd> 회전 &nbsp; <kbd>WASD</kbd> 이동 &nbsp; <kbd>휠</kbd> 확대 &nbsp; <kbd>P</kbd> 캡처</div>
+  <div id="joy"><i></i></div>
+  <div id="keys"><kbd>1</kbd>~<kbd>5</kbd> 무기 &nbsp; <kbd>6</kbd> 풀소유 &nbsp; <kbd>드래그</kbd> 회전 &nbsp; <kbd>WASD</kbd> 이동 &nbsp; <kbd>휠</kbd> 확대 &nbsp; <kbd>P</kbd> 캡처</div>
 </div>
 
 <div id="start" class="screen">
   <div class="card panel">
     <span class="kicker">기말고사 시즌 한정</span>
     <div class="title">캠퍼스 <b>부수기</b></div>
-    <p class="lead">캠퍼스 건물을 무너뜨리세요. 뒤에 선 N서울타워를 무너뜨리면 큰 점수가 들어옵니다. 랭킹은 1분 타임어택 점수로만 매겨집니다.</p>
+    <p class="lead">캠퍼스 건물을 무너뜨리세요. 뒤에 선 N서울타워를 무너뜨리면 큰 점수가 들어옵니다. 남산에는 코끼리들이 돌아다닙니다. 랭킹은 1분 타임어택 점수로만 매겨집니다.</p>
     <div class="weap" id="weapIntro"></div>
     <label class="field"><span>닉네임</span><input id="nick" maxlength="10" autocomplete="nickname" enterkeyhint="next" placeholder="랭킹에 보일 이름 (10자 이내)"></label>
     <div class="err" id="formErr"></div>
@@ -308,13 +322,13 @@
 <div id="loading" class="show"><div class="box"><div class="logo">캠퍼스 <b>부수기</b></div><div class="bar"><i id="loadBar"></i></div><div id="loadTxt">불러오는 중</div><button class="btn main" id="reloadBtn" hidden style="margin-top:14px">새로고침</button></div></div>
 
 <script src="js/three.min.js"></script>
-<script src="js/orbit.js?v=11"></script>
-<script src="js/rank.js?v=11"></script>
+<script src="js/orbit.js?v=12"></script>
+<script src="js/rank.js?v=12"></script>
 <script>document.getElementById('loadBar').style.width = '25%';</script>
 <script src="data/campus.js"></script>
 <script>document.getElementById('loadBar').style.width = '55%';</script>
-<script src="js/world.js?v=11"></script>
+<script src="js/world.js?v=12"></script>
 <script src="js/sfx.js"></script>
-<script src="js/game.js?v=11"></script>
+<script src="js/game.js?v=12"></script>
 </body>
 </html>

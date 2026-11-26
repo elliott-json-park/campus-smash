@@ -361,16 +361,30 @@ function makeIR(sec) {
   return ir;
 }
 function makeShaper(k) { const n = 2048, c = new Float32Array(n); for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; c[i] = Math.tanh(k * x) / Math.tanh(k); } const s = AC.createWaveShaper(); s.curve = c; s.oversample = '2x'; return s; }
+// sound budget: a phone can't mix dozens of overlapping synth layers, and building them stalls the frame. Past a few voices at once,
+// new filler sounds are simply dropped (the player's own shots and big blasts get a little extra room), and phones get thinner layers.
+const SND_LITE = !!window.LITE, MAXV = SND_LITE ? 6 : 14, LQ = SND_LITE ? 0.3 : 1, MASTER_V = 0.55;
+const vEnds = [];
+function voice(dur, prio) {
+  if (!live()) return false;
+  const now = AC.currentTime;
+  for (let i = vEnds.length - 1; i >= 0; i--) if (vEnds[i] <= now) vEnds.splice(i, 1);
+  const cap = prio >= 2 ? MAXV + 4 : prio === 1 ? MAXV : Math.ceil(MAXV / 2);
+  if (vEnds.length >= cap) return false;
+  vEnds.push(now + dur); return true;
+}
+const nq = (n) => Math.max(1, Math.round(n * LQ));
 function audioInit() {
   if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
   try {
-    AC = new (window.AudioContext || window.webkitAudioContext)();
-    master = AC.createGain(); master.gain.value = muted ? 0 : 0.7;
-    const comp = AC.createDynamicsCompressor(); comp.threshold.value = -20; comp.knee.value = 14; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.3;
-    const lim = AC.createDynamicsCompressor(); lim.threshold.value = -3; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.1;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    try { AC = new Ctx({ latencyHint: SND_LITE ? 'balanced' : 'interactive' }); } catch (e) { AC = new Ctx(); }
+    master = AC.createGain(); master.gain.value = muted ? 0 : MASTER_V;
+    const comp = AC.createDynamicsCompressor(); comp.threshold.value = -22; comp.knee.value = 14; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.3;
+    const lim = AC.createDynamicsCompressor(); lim.threshold.value = -6; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.002; lim.release.value = 0.15;
     master.connect(comp); comp.connect(lim); lim.connect(AC.destination);
     OUT = AC.createGain(); OUT.connect(master);
-    REV = AC.createConvolver(); REV.buffer = makeIR(3.4); const rg = AC.createGain(); rg.gain.value = 0.5; REV.connect(rg); rg.connect(master);
+    REV = AC.createConvolver(); REV.buffer = makeIR(SND_LITE ? 1.6 : 3.4); const rg = AC.createGain(); rg.gain.value = 0.5; REV.connect(rg); rg.connect(master);
     ECHO = AC.createDelay(2); ECHO.delayTime.value = 0.38; const ef = flt('lowpass', 1500), eg = AC.createGain(), fb = AC.createGain(); eg.gain.value = 0.3; fb.gain.value = 0.32;
     ECHO.connect(ef); ef.connect(eg); eg.connect(master); ef.connect(fb); fb.connect(ECHO);
     NB = noiseBuf('white'); PB = noiseBuf('pink'); BB = noiseBuf('brown'); SHAPE = makeShaper(2.2); SHAPE_HARD = makeShaper(6);
@@ -430,8 +444,10 @@ let lastBoomT = 0;
 // explosions: a sharp crack, a saturated body sweeping down, a sub-bass punch, a rolling tail, then rubble raining down
 function sfxBoom(R, p, opt) {
   if (!live()) return;
+  if (R < 6 && AC.currentTime - lastBoomT < (SND_LITE ? 0.15 : 0.05)) return;
+  if (!voice(Math.min(2, 0.5 + R * 0.05), R >= 9 ? 2 : 1)) return;
   const P = place(p, R >= 4), t = P.t, out = P.node, k = clamp(R / 14, 0.22, 1.8), far = clamp(P.d / 700, 0, 1);
-  if (t - lastBoomT < 0.025 && R < 6) return; lastBoomT = t;
+  lastBoomT = AC.currentTime;
   const dur = 0.35 + R * 0.05;
   if (far < 0.9) chain(noise(NB, t, 0.03), flt('highpass', 1400), SHAPE_HARD, gEnv(t, 0.7 * k * (1 - far * 0.7), 0.001, 0.025), out);   // crack
   samp(pick('explosionCrunch', 5), out, t, clamp(1.35 - R / 20, 0.55, 1.5) * rand(0.92, 1.08), 0.72 * k);                       // recorded blast
@@ -445,43 +461,45 @@ function sfxBoom(R, p, opt) {
     chain(noise(PB, t + 0.02, 0.9), flt('bandpass', 900, 0.8), gEnv(t + 0.02, 0.25 * k, 0.04, 0.8), out); // air tearing
   }
   if (R >= 4 && !(opt && opt.air)) {                                 // rubble and clods coming back down
-    const n = Math.min(26, Math.round(R * 2));
+    const n = nq(Math.min(26, Math.round(R * 2)));
     for (let i = 0; i < n; i++) { const tt = t + 0.25 + Math.pow(Math.random(), 1.4) * (1 + R * 0.08); grain(out, tt, rand(350, 2600), rand(3, 9), rand(0.05, 0.16) * k, rand(0.02, 0.06)); }
-    for (let i = 0; i < Math.min(5, R / 3); i++) { const tt = t + rand(0.4, 1.6); chain(osc('sine', tt, 0.2, rand(80, 120), 45, 0.15), gEnv(tt, 0.25 * k, 0.002, 0.16), out); }
-    for (let i = 0; i < Math.min(7, R / 2); i++) samp(pick('impactMining', 4), out, t + 0.3 + Math.pow(Math.random(), 1.3) * (1 + R * 0.06), rand(0.55, 1.1), rand(0.15, 0.3) * k);
+    for (let i = 0; i < Math.min(5, R / 3) * LQ; i++) { const tt = t + rand(0.4, 1.6); chain(osc('sine', tt, 0.2, rand(80, 120), 45, 0.15), gEnv(tt, 0.25 * k, 0.002, 0.16), out); }
+    for (let i = 0; i < Math.min(7, R / 2) * LQ; i++) samp(pick('impactMining', 4), out, t + 0.3 + Math.pow(Math.random(), 1.3) * (1 + R * 0.06), rand(0.55, 1.1), rand(0.15, 0.3) * k);
   }
-  if (opt && opt.fire) for (let i = 0; i < 18; i++) { const tt = t + 0.3 + Math.random() * 2.2; grain(out, tt, rand(1500, 5000), 2, rand(0.02, 0.05), 0.008); }
+  if (opt && opt.fire) for (let i = 0; i < nq(18); i++) { const tt = t + 0.3 + Math.random() * 2.2; grain(out, tt, rand(1500, 5000), 2, rand(0.02, 0.05), 0.008); }
 }
 let lastClat = 0;
 function sfxDebris(p, n) {
   if (!live()) return;
-  const P = place(p, false); if (P.t - lastClat < 0.1) return; lastClat = P.t;
-  const k = Math.min(14, 3 + Math.round(n * 0.6));
+  if (AC.currentTime - lastClat < (SND_LITE ? 0.3 : 0.12) || !voice(0.9, 0)) return; lastClat = AC.currentTime;
+  const P = place(p, false);
+  const k = nq(Math.min(14, 3 + Math.round(n * 0.6)));
   chain(noise(PB, P.t, 0.5), flt('bandpass', 700, 0.9), gEnv(P.t, 0.18, 0.01, 0.45), P.node);           // the crunch of the wall giving way
   for (let i = 0; i < k; i++) { const tt = P.t + 0.08 + Math.pow(Math.random(), 1.6) * 1.6; grain(P.node, tt, rand(400, 2400), rand(3, 10), rand(0.08, 0.22), rand(0.02, 0.07)); }
-  for (let i = 0; i < 3; i++) samp(pick('impactMining', 4), P.node, P.t + rand(0, 1.2), rand(0.7, 1.2), 0.35);
+  for (let i = 0; i < (SND_LITE ? 1 : 3); i++) samp(pick('impactMining', 4), P.node, P.t + rand(0, 1.2), rand(0.7, 1.2), 0.35);
 }
 let lastGlass = 0;
 function sfxGlass(p) {
   if (!live()) return;
-  const P = place(p, false); if (P.t - lastGlass < 0.12) return; lastGlass = P.t;
+  if (AC.currentTime - lastGlass < (SND_LITE ? 0.4 : 0.15) || !voice(0.8, 0)) return; lastGlass = AC.currentTime;
+  const P = place(p, false);
   chain(noise(NB, P.t, 0.35), flt('highpass', 3200), gEnv(P.t, 0.32, 0.002, 0.3), P.node);
-  samp(pick('impactGlass_heavy', 3), P.node, P.t, rand(0.85, 1.1), 0.75); for (let i = 0; i < 2; i++) samp(pick('impactGlass_medium', 2), P.node, P.t + rand(0.2, 0.9), rand(0.9, 1.3), 0.35);
-  for (let i = 0; i < 16; i++) { const tt = P.t + Math.pow(Math.random(), 1.3) * 1.3; modal(P.node, tt, rand(2400, 6400), [1, 2.32, 4.25], rand(0.05, 0.12) * (1 - (tt - P.t) / 1.6), rand(0.1, 0.35)); }
+  samp(pick('impactGlass_heavy', 3), P.node, P.t, rand(0.85, 1.1), 0.75); for (let i = 0; i < (SND_LITE ? 0 : 2); i++) samp(pick('impactGlass_medium', 2), P.node, P.t + rand(0.2, 0.9), rand(0.9, 1.3), 0.35);
+  for (let i = 0; i < nq(16); i++) { const tt = P.t + Math.pow(Math.random(), 1.3) * 1.3; modal(P.node, tt, rand(2400, 6400), [1, 2.32, 4.25], rand(0.05, 0.12) * (1 - (tt - P.t) / 1.6), rand(0.1, 0.35)); }
 }
 function sfxRumble(p, dur) {
-  if (!live()) return;
+  if (!voice(Math.min(1.5, dur * 0.5), 1)) return;
   const P = place(p, true), t = P.t;
   const lfo = osc('sine', t, dur, rand(2, 4)), lg = AC.createGain(); lg.gain.value = 0.35; lfo.connect(lg);
   const amp = AC.createGain(); amp.gain.value = 0.65; lg.connect(amp.gain);
   chain(noise(BB, t, dur), flt('lowpass', 170), amp, gEnv(t, 1, 0.3, dur - 0.3), P.node);
-  for (let i = 0; i < dur * 5; i++) { const tt = t + Math.random() * dur * 0.8; chain(noise(PB, tt, 0.15), flt('bandpass', rand(200, 900), 2), gEnv(tt, 0.2, 0.005, 0.12), P.node); }
+  for (let i = 0; i < dur * 5 * LQ; i++) { const tt = t + Math.random() * dur * 0.8; chain(noise(PB, tt, 0.15), flt('bandpass', rand(200, 900), 2), gEnv(tt, 0.2, 0.005, 0.12), P.node); }
 }
 // a building giving up: steel groaning and concrete snapping
 function sfxCreak(p, dur) {
-  if (!live()) return;
+  if (!voice(Math.min(1.5, dur * 0.5), 1)) return;
   const P = place(p, true), t = P.t;
-  for (let v = 0; v < 2; v++) {
+  for (let v = 0; v < (SND_LITE ? 1 : 2); v++) {
     const o = AC.createOscillator(); o.type = 'sawtooth'; const f0 = rand(38, 62) * (v ? 1.5 : 1); o.frequency.setValueAtTime(f0, t);
     for (let k = 1; k <= 6; k++) o.frequency.linearRampToValueAtTime(f0 * rand(0.7, 1.35), t + dur * k / 6);
     o.start(t); o.stop(t + dur + 0.1);
@@ -489,25 +507,25 @@ function sfxCreak(p, dur) {
     for (const [f, q] of [[320, 9], [720, 11], [1350, 13]]) chain(bus, flt('bandpass', f * rand(0.9, 1.1), q), P.node);
   }
   samp(SMP.impactPlate_heavy_000, P.node, t + dur * 0.3, 0.32, 0.55, 900); samp(SMP.impactPlate_heavy_000, P.node, t + dur * 0.75, 0.27, 0.6, 700);   // steel straining
-  for (let i = 0; i < 10; i++) { const tt = t + Math.pow(Math.random(), 0.7) * dur; chain(noise(NB, tt, 0.03), flt('highpass', 900), SHAPE, gEnv(tt, rand(0.15, 0.4), 0.001, 0.03), P.node); grain(P.node, tt + 0.02, rand(300, 1200), 4, 0.12, 0.08); }
+  for (let i = 0; i < nq(10); i++) { const tt = t + Math.pow(Math.random(), 0.7) * dur; chain(noise(NB, tt, 0.03), flt('highpass', 900), SHAPE, gEnv(tt, rand(0.15, 0.4), 0.001, 0.03), P.node); grain(P.node, tt + 0.02, rand(300, 1200), 4, 0.12, 0.08); }
 }
 function sfxThud(p, size) {
-  if (!live()) return;
+  if (!voice(0.3, 0)) return;
   const P = place(p, size > 3), k = clamp(size / 4, 0.15, 1);
   chain(osc('sine', P.t, 0.35, 95, 34, 0.25), SHAPE, gEnv(P.t, 0.8 * k, 0.003, 0.28), P.node);
   chain(noise(BB, P.t, 0.35), flt('lowpass', 500), gEnv(P.t, 0.6 * k, 0.003, 0.3), P.node);
-  for (let i = 0; i < 4; i++) grain(P.node, P.t + rand(0.03, 0.3), rand(300, 1500), 5, 0.08 * k, 0.04);
+  for (let i = 0; i < nq(4); i++) grain(P.node, P.t + rand(0.03, 0.3), rand(300, 1500), 5, 0.08 * k, 0.04);
   samp(pick('impactMining', 4), P.node, P.t, rand(0.45, 0.62), 0.6 * k);
 }
 function sfxClink(p) {                                               // a steel grenade body bouncing
-  if (!live()) return;
+  if (!voice(0.2, 1)) return;
   const P = place(p, false);
   chain(noise(NB, P.t, 0.01), flt('highpass', 2500), gEnv(P.t, 0.15, 0.0005, 0.01), P.node);
   modal(P.node, P.t, rand(1300, 1800), [1, 2.43, 3.96, 5.62], 0.08, 0.22); samp(pick('impactMetal_light', 3), P.node, P.t, rand(1, 1.25), 0.55);
   chain(osc('sine', P.t, 0.1, 160, 70, 0.08), gEnv(P.t, 0.15, 0.002, 0.08), P.node);
 }
 function sfxWhoosh(dur, v, f0, f1, p) {
-  if (!live()) return;
+  if (!voice(dur * 0.6, 1)) return;
   const P = p ? place(p, false) : { node: OUT, t: AC.currentTime };
   for (const [m, q] of [[1, 2.2], [1.9, 4]]) {
     const f = flt('bandpass', f0 * m, q); f.frequency.setValueAtTime(f0 * m, P.t); f.frequency.exponentialRampToValueAtTime(f1 * m, P.t + dur);
@@ -519,18 +537,21 @@ let lastGun = 0, gunN = 0;
 // 30 mm autocannon right beside the camera: a hard muzzle report, the bolt cycling, now and then a spent casing ringing
 function sfxCannon() {
   if (!live()) return;
-  const t = AC.currentTime + 0.003; if (t - lastGun < 0.03) return; lastGun = t; gunN++;
-  const P = place(null, true, 0.35), out = P.node;
+  const t = AC.currentTime + 0.003; if (t - lastGun < 0.03) return;
+  if (!voice(0.15, 2)) return; lastGun = t; gunN++;
+  const P = place(null, !SND_LITE, 0.35), out = P.node;
   chain(noise(PB, t, 0.16), flt('lowpass', 3500, 0.8), SHAPE_HARD, gEnv(t, 0.55, 0.001, 0.13), out);
-  chain(noise(NB, t, 0.02), flt('highpass', 2000), gEnv(t, 0.35, 0.0005, 0.018), out);
   chain(osc('sine', t, 0.2, 120, 42, 0.12), SHAPE, gEnv(t, 0.7, 0.002, 0.14), out);
-  chain(osc('square', t + 0.045, 0.02, 2100), flt('bandpass', 2100, 6), gEnv(t + 0.045, 0.05, 0.001, 0.015), out);
-  if (gunN % 3 === 0) modal(out, t + rand(0.35, 0.55), rand(3000, 4200), [1, 2.7, 5.1], 0.035, 0.18);
-  samp(SMP.explosionCrunch_000, out, t, rand(1.75, 2.05), 0.32); samp(SMP.impactMetal_000, out, t + 0.04, 2.2, 0.06);
+  if (!SND_LITE) {
+    chain(noise(NB, t, 0.02), flt('highpass', 2000), gEnv(t, 0.35, 0.0005, 0.018), out);
+    chain(osc('square', t + 0.045, 0.02, 2100), flt('bandpass', 2100, 6), gEnv(t + 0.045, 0.05, 0.001, 0.015), out);
+  }
+  if (gunN % (SND_LITE ? 6 : 3) === 0) modal(out, t + rand(0.35, 0.55), rand(3000, 4200), [1, 2.7, 5.1], 0.035, 0.18);
+  samp(SMP.explosionCrunch_000, out, t, rand(1.75, 2.05), 0.32); if (!SND_LITE) samp(SMP.impactMetal_000, out, t + 0.04, 2.2, 0.06);
 }
 // thunder: the strike is a tearing crack; the roll arrives later and swells several times
 function sfxThunder(p) {
-  if (!live()) return;
+  if (!voice(1.5, 2)) return;
   const d = camera.position.distanceTo(p), now = AC.currentTime, near = place(null, true), v = clamp(1.5 - d / 800, 0.35, 1.2);
   const crack = near.node;
   chain(noise(NB, now, 0.006), SHAPE_HARD, gEnv(now, 0.9 * v, 0.0003, 0.006), crack);
@@ -540,26 +561,26 @@ function sfxThunder(p) {
   chain(noise(PB, now, 0.6), flt('lowpass', 2500), SHAPE, gEnv(now, 0.6 * v, 0.002, 0.5), crack);
   samp(pick('explosionCrunch', 5), crack, now, 1.45, 0.55 * v);
   const P = place(p, true), t = P.t, L = 4.5;
-  for (let k = 0; k < 5; k++) { const t0 = t + k * rand(0.25, 0.7), dur = rand(1.2, 2.6); chain(noise(BB, t0, dur), flt('lowpass', rand(150, 340)), SHAPE, gEnv(t0, rand(0.4, 0.75) * v * (1 - k * 0.12), rand(0.08, 0.3), dur), P.node); }
+  for (let k = 0; k < (SND_LITE ? 2 : 5); k++) { const t0 = t + k * rand(0.25, 0.7), dur = rand(1.2, 2.6); chain(noise(BB, t0, dur), flt('lowpass', rand(150, 340)), SHAPE, gEnv(t0, rand(0.4, 0.75) * v * (1 - k * 0.12), rand(0.08, 0.3), dur), P.node); }
   chain(osc('sine', t, 1.4, 58, 24, 1.2), SHAPE, gEnv(t, 0.9 * v, 0.02, 1.3), P.node);
   samp(SMP.lowFrequency_explosion_001, P.node, t, 0.42, 1.0 * v); samp(SMP.lowFrequency_explosion_000, P.node, t + rand(0.6, 1.2), 0.35, 0.7 * v);
   chain(noise(PB, t, L), flt('bandpass', 420, 0.7), gEnv(t, 0.3 * v, 0.2, L - 0.2), P.node);
 }
 function sfxCrackle(p, dur) {                                        // electric fizz before a strike
-  if (!live()) return;
+  if (!voice(dur, 0)) return;
   const P = place(p, false), gate = AC.createGain(); gate.gain.value = 0;
   for (let i = 0; i < dur * 120; i++) { const tt = P.t + Math.random() * dur; gate.gain.setValueAtTime(rand(0.3, 1), tt); gate.gain.setValueAtTime(0, tt + 0.003); }
   chain(noise(NB, P.t, dur), flt('highpass', 2500), gate, gEnv(P.t, 0.5, 0.01, dur), P.node);
 }
 // 조준 파괴포: capacitor whine while it charges, then a magnetic slam and a supersonic crack
 function sfxRailCharge() {
-  if (!live()) return;
+  if (!voice(0.8, 2)) return;
   const t = AC.currentTime + 0.01, out = place(null, false, 0.2).node;
   for (const [type, m, v] of [['sine', 1, 0.08], ['triangle', 2.01, 0.04], ['sawtooth', 0.5, 0.015]]) chain(osc(type, t, 0.7, 180 * m, 2200 * m, 0.6), gEnv(t, v, 0.4, 0.3), out);
   chain(osc('sine', t + 0.68, 0.08, 1760), gEnv(t + 0.68, 0.07, 0.003, 0.07), out); chain(osc('sine', t + 0.78, 0.12, 2349), gEnv(t + 0.78, 0.07, 0.003, 0.1), out);
 }
 function sfxRail() {
-  if (!live()) return;
+  if (!voice(1.2, 2)) return;
   const t = AC.currentTime + 0.003, out = place(null, true, 0.15).node;
   const car = osc('sawtooth', t, 0.3, 260, 3400, 0.09), mod = osc('sine', t, 0.3, 90, 900, 0.1), mg = AC.createGain(); mg.gain.value = 600; mod.connect(mg); mg.connect(car.frequency);
   chain(car, flt('bandpass', 1600, 1.5), gEnv(t, 0.35, 0.002, 0.22), out);
@@ -575,7 +596,7 @@ function sfxChime() {
   if (!live()) return;
   const t = AC.currentTime + 0.01, out = place(null, false).node;
   [1046.5, 1318.5, 1568, 2093, 2637].forEach((fr, i) => { const tt = t + i * 0.07; modal(out, tt, fr, [1, 2, 3.01], 0.09, 0.7); });
-  for (let i = 0; i < 24; i++) { const tt = t + Math.random() * 0.8; chain(osc('sine', tt, 0.1, rand(4000, 8000)), gEnv(tt, 0.02, 0.002, 0.08), out); }
+  for (let i = 0; i < nq(24); i++) { const tt = t + Math.random() * 0.8; chain(osc('sine', tt, 0.1, rand(4000, 8000)), gEnv(tt, 0.02, 0.002, 0.08), out); }
 }
 // 먼작귀's voice: a tiny high-pitched formant voice ("야!", "핫!", "와아~")
 const VOWEL = { a: [850, 1610, 2900], i: [300, 2300, 3000], u: [325, 700, 2530], e: [500, 1900, 2600], o: [450, 800, 2830] };
@@ -600,7 +621,7 @@ function sfxVoice(name, p) {
 // continuous sounds that follow something moving (missile motors, meteors): keep them panned, muffled and Doppler-shifted every frame
 const loops = [];
 function startLoop(kind, p) {
-  if (!live()) return null;
+  if (!live() || (kind !== 'meteor' && loops.length >= (SND_LITE ? 2 : 5))) return null;
   const g = AC.createGain(), lp = flt('lowpass', 8000), sp = AC.createStereoPanner ? AC.createStereoPanner() : null; g.gain.value = 0;
   g.connect(lp); const tail = sp ? (lp.connect(sp), sp) : lp; tail.connect(OUT); const send = AC.createGain(); send.gain.value = 0.35; tail.connect(send); send.connect(REV);
   const srcs = [], t = AC.currentTime;
@@ -652,8 +673,8 @@ function beamSound(name, on, p) {
     for (const s of B.srcs) try { s.stop(t + 0.2); } catch (e) {}
   } else if (on && B) B.gate.gain.setTargetAtTime(rand(0.05, 0.5), AC.currentTime, 0.01);   // sputtering crackle
 }
-function sfxStep(p) { if (!live()) return; const P = place(p, false); samp(pick('footstep_concrete', 3), P.node, P.t, rand(0.32, 0.4), 1.1); }
-function sfxPunch(p, big) { if (!live()) return; const P = place(p, true); samp(pick('impactPunch_heavy', 3), P.node, P.t, big ? 0.5 : rand(0.65, 0.8), 1.1); }
+function sfxStep(p) { if (!voice(0.2, 0)) return; const P = place(p, false); samp(pick('footstep_concrete', 3), P.node, P.t, rand(0.32, 0.4), 1.1); }
+function sfxPunch(p, big) { if (!voice(0.3, 1)) return; const P = place(p, true); samp(pick('impactPunch_heavy', 3), P.node, P.t, big ? 0.5 : rand(0.65, 0.8), 1.1); }
 function sfxSqueak(k) { sfxVoice(k > 1.1 ? 'hap' : 'ya'); }
 
 // ------------------------------------------------------------------ building surface damage: soot, shattered windows, glowing hot spots (per-building shader marks)
@@ -1482,7 +1503,7 @@ function coolDown() {
 function applyDamage(p, R, power, o) {
   o = o || {};
   // the mountain itself takes dents and scorch but scores nothing; only the tower (a structure) counts
-  if (!inCampusAt(p.x, p.z) && V.namsanHit(p.x, p.z, R)) { if (Math.random() < 0.4) addFire(p.x, p.y, p.z, rand(4, 8), R * 0.6, null, true); }
+  if (!inCampusAt(p.x, p.z)) { hitElephants(p, R); if (V.namsanHit(p.x, p.z, R) && Math.random() < 0.4) addFire(p.x, p.y, p.z, rand(4, 8), R * 0.6, null, true); }
   const Rg = o.laser ? R : R * 2.4;
   for (const S of structs) {
     if (S.dead) continue;
@@ -1679,6 +1700,8 @@ const _ro = new V3(), _rd = new V3();
 function castRay(o, d) {
   const h = rayStructs(o, d, 1e5);
   const g = marchGround(o, d, h ? h.d : Infinity);
+  const near = g && (!h || g.d < h.d) ? g : h, e = rayEle(o, d, near ? near.d : 6000);
+  if (e) return e;
   if (g && (!h || g.d < h.d)) return g.p;
   return h ? h.p.clone() : null;
 }
@@ -1782,7 +1805,7 @@ function launchMissile(target) {
   const o = gunOrigin(G.mside * 1.8);
   const vel = new V3().addScaledVector(camU, 9).addScaledVector(UP, 8).addScaledVector(camF, 10).addScaledVector(camR, G.mside * 4);
   const mesh = MISSILE.clone(); mesh.position.copy(o); scene.add(mesh);
-  projs.push({ k: 'missile', mesh, pos: o, vel, target: target.clone(), t: 0, acc: 0, lit: false, R: 10, power: 44 });
+  projs.push({ k: 'missile', mesh, pos: o, vel, target: target.clone(), t: 0, acc: 0, lit: false, R: 10, power: 44, ele: target.ele || null, eoff: target.ele ? target.clone().sub(target.ele.g.position) : null });
   sfxWhoosh(0.3, 0.12, 400, 1100); if (live()) chain(osc('sine', AC.currentTime, 0.12, 160, 60, 0.1), gEnv(AC.currentTime, 0.3, 0.002, 0.1), OUT);   // ejection thunk
 }
 function throwGrenade(target) {
@@ -1806,7 +1829,7 @@ function launchMeteor(target, scale, R) {
 }
 // the double crack of something supersonic passing overhead
 function sfxSonic(p) {
-  if (!live()) return; const P = place(p, true);
+  if (!voice(0.2, 1)) return; const P = place(p, true);
   for (const dt of [0, 0.11]) chain(noise(NB, P.t + dt, 0.03), flt('highpass', 600), SHAPE_HARD, gEnv(P.t + dt, 0.7, 0.0005, 0.03), P.node);
 }
 function meteorImpact(p) {
@@ -1834,6 +1857,7 @@ function stepProjs(dt) {
           if (live()) { const P = place(p.pos, false); chain(noise(PB, P.t, 0.25), flt('lowpass', 2500), SHAPE, gEnv(P.t, 0.5, 0.004, 0.22), P.node); }
         }
         const speed = Math.min(220, p.vel.length() + 280 * dt);
+        if (p.ele && (p.ele.state === 'walk' || p.ele.state === 'pop')) p.target.copy(p.ele.g.position).add(p.eoff);   // follow a walking elephant
         // top attack: chase a point above the target that drops onto it as the missile closes in
         const hd = Math.hypot(p.target.x - p.pos.x, p.target.z - p.pos.z);
         _v.copy(p.target); if (hd > 12) _v.y += Math.min(90, hd * 0.42);
@@ -2162,8 +2186,10 @@ function selectWeapon(i, quiet) {
 function showTip() {
   const i = G.cur, t = $('#wtip');
   if (i >= 0) { const w = WEAPONS[i]; reticleMat.color.set(w.id === 'bolt' ? 0x9fc8ff : w.id === 'rail' ? 0x6ff0ff : 0xff5a1f); t.textContent = w.name + ': ' + (TOUCH ? w.touchTip || w.tip : w.tip); }
-  else { reticle.visible = false; t.textContent = TOUCH ? '시점 이동: 한 손가락으로 끌기, 두 손가락으로 확대' : '시점 이동: 드래그 회전, 우클릭 드래그 이동, 휠 확대'; }
-  t.classList.add('show'); clearTimeout(tipTimer); tipTimer = setTimeout(() => t.classList.remove('show'), 2400);
+  else if (monk.on) { reticle.visible = false; t.textContent = TOUCH ? '왼쪽 조이스틱으로 걷기, 한 손가락으로 시점 돌리기' : 'WASD 걷기, Shift 달리기, 드래그로 시점 돌리기'; }
+  else { reticle.visible = false; t.textContent = TOUCH ? '한 손가락으로 이동, 두 손가락으로 확대하고 비틀면 360도 회전' : '시점 이동: 드래그 회전, 우클릭 드래그 이동, 휠 확대'; }
+  if (monk.on && i >= 0) t.textContent = TOUCH ? '조이스틱으로 걷고, 탭으로 ' + WEAPONS[i].name + ' 발사. 두 손가락으로 시점 회전' : 'WASD로 걷고, 클릭으로 ' + WEAPONS[i].name + ' 발사. 우클릭 드래그로 시점 회전';
+  t.classList.add('show'); clearTimeout(tipTimer); tipTimer = setTimeout(() => t.classList.remove('show'), monk.on ? 3400 : 2400);
 }
 function setIf(el, prop, val, cache, key) { if (el && cache[key] !== val) { cache[key] = val; el.style[prop] = val; } }
 const hud = { timer: $('#timer'), score: $('#score'), mult: $('#mult'), multTxt: $('#multTxt'), multBar: $('#multBar'), last: {} };
@@ -2228,7 +2254,8 @@ function cameraStep(dt) {
     const k = clamp((G.time - camTween.s) / camTween.d, 0, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
     camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e);
     if (k >= 1) camTween = null;
-  } else {
+  } else if (monk.on) monkStep(dt);
+  else {
     const rIn = (keys.KeyE ? 1 : 0) - (keys.KeyQ ? 1 : 0);
     camBasis();
     const fx = camF.x, fz = camF.z, fl = Math.hypot(fx, fz) || 1, ux = fx / fl, uz = fz / fl;
@@ -2248,7 +2275,8 @@ function cameraStep(dt) {
     if (rIn) { _v.subVectors(camera.position, controls.target).applyAxisAngle(UP, -rIn * 1.3 * dt); camera.position.copy(controls.target).add(_v); }
   }
   controls.update();
-  const floor = Math.max(roofTopAt(camera.position.x, camera.position.z), groundY(camera.position.x, camera.position.z), BASEY + 10) + 4;
+  const floor = monk.on ? Math.max(roofTopAt(camera.position.x, camera.position.z), groundY(camera.position.x, camera.position.z)) + 1.2
+    : Math.max(roofTopAt(camera.position.x, camera.position.z), groundY(camera.position.x, camera.position.z), BASEY + 10) + 4;
   if (camera.position.y < floor) { camera.position.y = floor; camera.lookAt(controls.target); }
   camera.updateMatrixWorld();
 }
@@ -2334,12 +2362,301 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
   if (e.repeat) return;
   if (/^Digit[1-5]$/.test(e.code)) selectWeapon(Number(e.code[5]) - 1);
+  else if (e.code === 'Digit6' || e.code === 'KeyF') setMonk(!monk.on);
   else if (e.code === 'Escape') selectWeapon(-1);
   else if (e.code === 'KeyP') capture();
-  else if (e.code === 'KeyR') tweenCam(startView(), startTarget(), 1.0);
+  else if (e.code === 'KeyR' && !monk.on) tweenCam(startView(), startTarget(), 1.0);
   else if (e.code === 'KeyM') toggleMute();
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+// phones have no right button: a two-finger twist turns the view around the campus (the angle between the fingers drives the azimuth),
+// while the same two fingers still pinch to zoom and drag to move
+const tpos = new Map(); let twistA = null;
+function twistAngle() { const [a, b] = [...tpos.values()]; return Math.atan2(b.y - a.y, b.x - a.x); }
+canvas.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'touch') return; tpos.set(e.pointerId, { x: e.clientX, y: e.clientY }); twistA = tpos.size === 2 ? twistAngle() : null; });
+window.addEventListener('pointermove', (e) => {
+  const q = e.pointerType === 'touch' && tpos.get(e.pointerId); if (!q) return;
+  q.x = e.clientX; q.y = e.clientY;
+  if (tpos.size !== 2 || twistA == null) return;
+  const a = twistAngle(); let d = a - twistA; twistA = a;
+  if (monk.on || camTween || !(G.playing || angle.on)) return;
+  d = Math.atan2(Math.sin(d), Math.cos(d)); if (Math.abs(d) > 0.6) return;
+  _v.subVectors(camera.position, controls.target).applyAxisAngle(UP, d); camera.position.copy(controls.target).add(_v);
+});
+const twistEnd = (e) => { if (tpos.delete(e.pointerId)) twistA = tpos.size === 2 ? twistAngle() : null; };
+window.addEventListener('pointerup', twistEnd); window.addEventListener('pointercancel', twistEnd);
+
+// ------------------------------------------------------------------ 무자비 풀소유: a monk in grey robes walks the campus in third person.
+// The weapons still fire the usual way (from the gun positions and out of the sky, at the point you aim at); only the viewpoint
+// rides along with him. Phones get a stick on the left; the keyboard uses WASD.
+const MONK_K = 1.6, MONK_HEAD = 2.75, MONK_WALK = 9, MONK_RUN = 17;
+const monk = { on: false, pos: new V3(), yaw: 0, walkT: 0, spd: 0, mesh: null, parts: null, step: 0, joy: { id: null, x: 0, y: 0 } };
+function buildMonk() {
+  const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
+  const std = (hex, r) => new THREE.MeshStandardMaterial({ color: lin(hex), roughness: r == null ? 0.85 : r, metalness: 0 });
+  const robe = std('#8f928d'), kasa = std('#8a4724', 0.75), skin = std('#f0c9a2', 0.5), bead = std('#4a2b17', 0.4), shoe = std('#f3f2ec', 0.45), wood = std('#a0622c', 0.5);
+  const ink = new THREE.MeshBasicMaterial({ color: 0x1c1410 });
+  const add = (geo, m, x, y, z, parent) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; (parent || body).add(o); return o; };
+  add(new THREE.CylinderGeometry(0.25, 0.42, 0.98, 18), robe, 0, 0.6, 0);                       // long robe
+  add(new THREE.CylinderGeometry(0.235, 0.26, 0.52, 18), robe, 0, 1.33, 0);                    // upper body
+  add(new THREE.CylinderGeometry(0.265, 0.285, 0.09, 18), kasa, 0, 1.08, 0);                   // sash at the waist
+  const k = add(new THREE.CylinderGeometry(0.255, 0.28, 0.16, 18, 1, true), new THREE.MeshStandardMaterial({ color: lin('#8a4724'), roughness: 0.75, side: THREE.DoubleSide }), 0, 1.33, 0);
+  k.rotation.z = 0.62;                                                                         // 가사 across the chest
+  add(new THREE.CylinderGeometry(0.07, 0.08, 0.1, 10), skin, 0, 1.63, 0);
+  const head = add(new THREE.SphereGeometry(0.175, 20, 14), skin, 0, 1.8, 0); head.scale.set(1, 1.04, 1);
+  for (const s of [-1, 1]) {
+    add(new THREE.SphereGeometry(0.045, 8, 6), skin, s * 0.172, 1.79, 0);                       // ears
+    const eye = add(new THREE.BoxGeometry(0.055, 0.012, 0.01), ink, s * 0.062, 1.82, 0.168);    // calm, closed eyes
+    eye.rotation.z = s * -0.12;
+  }
+  const smile = add(new THREE.TorusGeometry(0.04, 0.007, 4, 10, Math.PI), ink, 0, 1.75, 0.165); smile.rotation.z = Math.PI;
+  const beads = add(new THREE.TorusGeometry(0.19, 0.024, 6, 22), bead, 0, 1.47, 0.04); beads.rotation.x = Math.PI / 2 - 0.45;   // 염주
+  const arms = [], feet = [];
+  for (const s of [-1, 1]) {
+    const a = new THREE.Group(); a.position.set(s * 0.29, 1.52, 0); body.add(a);
+    const sl = add(new THREE.CylinderGeometry(0.075, 0.15, 0.56, 12), robe, 0, -0.27, 0, a); sl.rotation.z = s * 0.1;
+    add(new THREE.SphereGeometry(0.058, 10, 8), skin, s * 0.03, -0.58, 0.01, a);
+    if (s > 0) { const mk = add(new THREE.SphereGeometry(0.09, 12, 8), wood, 0.04, -0.66, 0.07, a); mk.scale.set(1, 0.8, 0.9); }   // 목탁
+    arms.push(a);
+    const f = add(new THREE.BoxGeometry(0.11, 0.08, 0.26), shoe, s * 0.11, 0.04, 0.04, g); feet.push(f);   // 고무신
+  }
+  g.scale.setScalar(MONK_K);
+  monk.parts = { body, arms, feet };
+  return g;
+}
+// open ground inside the fence: not over the drop, not inside a building that still stands
+function monkFree(x, z) {
+  if (!inCampusAt(x, z)) return false;
+  const fi = fpAt(x, z); if (fi >= 0) { const S = fpStruct[fi]; if (S && !S.dead) return false; }
+  return true;
+}
+function monkSpawn() {
+  const c = aimAt(innerWidth / 2, innerHeight * 0.6) || controls.target;
+  for (let r = 0; r < 260; r += 4) for (let k = 0; k < 16; k++) {
+    const a = k / 16 * Math.PI * 2, x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r;
+    if (monkFree(x, z) && monkFree(x + 3, z) && monkFree(x - 3, z) && monkFree(x, z + 3) && monkFree(x, z - 3)) return new V3(x, groundY(x, z), z);
+  }
+  return new V3(CXc, groundY(CXc, CZc), CZc);
+}
+function setMonk(on, instant) {
+  if (on === monk.on) return;
+  if (on && (!G.playing || G.ended)) return;
+  monk.on = on; document.body.classList.toggle('monk', on); monkBtn.classList.toggle('sel', on);
+  monk.joy.id = null; monk.joy.x = monk.joy.y = 0; joyKnob.style.transform = '';
+  if (on) {
+    camBasis();
+    monk.pos.copy(monkSpawn()); monk.walkT = 0; monk.spd = 0;
+    // face the most open way (leaning toward where the camera was looking), so the first view isn't a wall
+    let bestS = -1, cy = Math.atan2(camF.x, camF.z); monk.yaw = cy;
+    for (let k = 0; k < 16; k++) {
+      const a = cy + k / 16 * Math.PI * 2; let r = 0;
+      while (r < 80 && monkFree(monk.pos.x + Math.sin(a) * (r + 3), monk.pos.z + Math.cos(a) * (r + 3))) r += 3;
+      const s = r * (1.2 + Math.cos(a - cy) * 0.4); if (s > bestS) { bestS = s; monk.yaw = a; }
+    }
+    if (!monk.mesh) monk.mesh = buildMonk();
+    scene.add(monk.mesh); poseMonk(0);
+    const head = monk.pos.clone().add(_v.set(0, MONK_HEAD, 0));
+    playControls(true);
+    tweenCam(head.clone().add(_v.set(-Math.sin(monk.yaw) * 13, 4.5, -Math.cos(monk.yaw) * 13)), head, 1.1);
+    sfxMoktak(); banner('무자비 풀소유', '스님 시점으로 캠퍼스를 걸어 다닙니다');
+  } else {
+    if (monk.mesh) scene.remove(monk.mesh);
+    playControls(G.playing);
+    const B = new V3(monk.pos.x, camGround(monk.pos.x, monk.pos.z), monk.pos.z), P = towardTower(B, 320, 190);
+    if (instant) { camTween = null; camera.position.copy(P); controls.target.copy(B); controls.update(); }
+    else tweenCam(P, B, 1.0);
+  }
+  showTip();
+}
+function poseMonk(dt) {
+  const m = monk.mesh, P = monk.parts; if (!m) return;
+  m.position.copy(monk.pos); m.rotation.y = monk.yaw;
+  const w = clamp(monk.spd / MONK_WALK, 0, 1.6), s = Math.sin(monk.walkT);
+  P.body.position.y = Math.abs(s) * 0.05 * w; P.body.rotation.x = 0.06 * w;
+  P.arms[0].rotation.x = s * 0.55 * w; P.arms[1].rotation.x = -s * 0.55 * w;
+  P.feet[0].position.z = 0.04 + s * 0.2 * w; P.feet[1].position.z = 0.04 - s * 0.2 * w;
+  P.feet[0].position.y = 0.04 + Math.max(0, s) * 0.08 * w; P.feet[1].position.y = 0.04 + Math.max(0, -s) * 0.08 * w;
+}
+function monkStep(dt) {
+  let ix = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0), iz = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
+  if (monk.joy.id != null) { ix += monk.joy.x; iz -= monk.joy.y; }
+  const mag = Math.min(1, Math.hypot(ix, iz)), ox = monk.pos.x, oz = monk.pos.z;
+  if (mag > 0.08) {
+    camBasis();
+    const fl = Math.hypot(camF.x, camF.z) || 1, ux = camF.x / fl, uz = camF.z / fl, n = Math.hypot(ix, iz);
+    const dx = (ux * iz - uz * ix) / n, dz = (uz * iz + ux * ix) / n;
+    const run = keys.ShiftLeft || keys.ShiftRight || (monk.joy.id != null && mag > 0.9);
+    const sp = (run ? MONK_RUN : MONK_WALK) * (monk.joy.id != null ? mag : 1) * dt;
+    if (monkFree(monk.pos.x + dx * sp, monk.pos.z)) monk.pos.x += dx * sp;
+    if (monkFree(monk.pos.x, monk.pos.z + dz * sp)) monk.pos.z += dz * sp;
+    let d = Math.atan2(dx, dz) - monk.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); monk.yaw += d * Math.min(1, dt * 10);
+  }
+  const moved = Math.hypot(monk.pos.x - ox, monk.pos.z - oz);
+  monk.spd = lerp(monk.spd, dt > 0 ? moved / dt : 0, Math.min(1, dt * 12)); monk.walkT += moved * 1.25 / MONK_K;
+  const st = Math.floor(monk.walkT / Math.PI); if (st !== monk.step) { monk.step = st; if (moved > 0) sfxStep(monk.pos); }
+  monk.pos.y = lerp(monk.pos.y, groundY(monk.pos.x, monk.pos.z), Math.min(1, dt * 12));
+  poseMonk(dt);
+  // the view rides along: target and camera move together by however far his head moved
+  const hx = monk.pos.x - controls.target.x, hy = monk.pos.y + MONK_HEAD - controls.target.y, hz = monk.pos.z - controls.target.z;
+  controls.target.x += hx; controls.target.y += hy; controls.target.z += hz; camera.position.x += hx; camera.position.y += hy; camera.position.z += hz;
+  const rIn = (keys.KeyE ? 1 : 0) - (keys.KeyQ ? 1 : 0);
+  if (rIn) { _v.subVectors(camera.position, controls.target).applyAxisAngle(UP, -rIn * 1.6 * dt); camera.position.copy(controls.target).add(_v); }
+}
+// a temple woodblock: two dry knocks
+function sfxMoktak() {
+  if (!voice(0.5, 2)) return;
+  const out = place(null, false).node;
+  for (const dt of [0, 0.2]) {
+    const t = AC.currentTime + 0.01 + dt;
+    chain(osc('sine', t, 0.14, 880, 700, 0.1), gEnv(t, 0.32, 0.001, 0.12), out);
+    chain(osc('sine', t, 0.06, 1960), gEnv(t, 0.08, 0.001, 0.05), out);
+    chain(noise(NB, t, 0.02), flt('bandpass', 2400, 3), gEnv(t, 0.2, 0.001, 0.02), out);
+  }
+}
+// the dock button and the thumb stick
+const MONK_ICON = '<svg viewBox="0 0 32 32"><path d="M5 31c1-7 5-10 11-10s10 3 11 10z" fill="#9a9d98"/><path d="M9.5 23.5 19 31h-4l-7.5-6z" fill="#a0542a"/><circle cx="16" cy="12.5" r="8" fill="#f0c8a0"/><circle cx="8.2" cy="13" r="1.7" fill="#e2b086"/><circle cx="23.8" cy="13" r="1.7" fill="#e2b086"/><path d="M12.3 13h2.4M17.3 13h2.4" stroke="#2a201a" stroke-width="1.5" stroke-linecap="round"/><path d="M13.6 16.4q2.4 1.8 4.8 0" stroke="#2a201a" stroke-width="1.2" fill="none" stroke-linecap="round"/><path d="M9.5 21q6.5 4.5 13 0" stroke="#5a3418" stroke-width="2.2" stroke-dasharray="1.7 1.1" fill="none"/></svg>';
+const monkBtn = document.createElement('button');
+monkBtn.className = 'slot monkslot'; monkBtn.setAttribute('aria-label', '무자비 풀소유');
+monkBtn.innerHTML = '<span class="key">6</span><span class="ic">' + MONK_ICON + '</span><span class="nm">무자비<br>풀소유</span>';
+monkBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); audioInit(); setMonk(!monk.on); });
+$('#dock').appendChild(monkBtn);
+{ const d = document.createElement('div'); d.innerHTML = MONK_ICON + '풀소유'; $('#weapIntro').appendChild(d); }
+const joyEl = $('#joy'), joyKnob = joyEl.querySelector('i');
+function joyMove(e) {
+  const r = joyEl.getBoundingClientRect(), R = r.width / 2;
+  let x = (e.clientX - r.left - R) / R, y = (e.clientY - r.top - R) / R; const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
+  monk.joy.x = x; monk.joy.y = y; joyKnob.style.transform = 'translate(' + (x * R * 0.6).toFixed(1) + 'px,' + (y * R * 0.6).toFixed(1) + 'px)';
+}
+joyEl.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); audioInit(); monk.joy.id = e.pointerId; try { joyEl.setPointerCapture(e.pointerId); } catch (er) {} joyMove(e); });
+joyEl.addEventListener('pointermove', (e) => { if (e.pointerId === monk.joy.id) joyMove(e); });
+const joyUp = (e) => { if (e.pointerId !== monk.joy.id) return; monk.joy.id = null; monk.joy.x = monk.joy.y = 0; joyKnob.style.transform = ''; };
+joyEl.addEventListener('pointerup', joyUp); joyEl.addEventListener('pointercancel', joyUp); joyEl.addEventListener('lostpointercapture', joyUp);
+
+// ------------------------------------------------------------------ elephants on Namsan: big round cartoon elephants ambling over the slope that
+// faces the campus. Any weapon can knock one flying; it comes back a little later somewhere else. They score nothing (only the tower does).
+const NS_C = { x: -1000, z: 805 }, ELE_S = 34, ELE_N = window.LITE ? 4 : 6;
+const ELE_A = Math.atan2(CZc - NS_C.z, CXc - NS_C.x);
+const eleMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+function partGeo(geo, m4, hex) {
+  const g = geo.index ? geo.toNonIndexed() : geo; g.applyMatrix4(m4);
+  const n = g.attributes.position.count, c = new Float32Array(n * 3), col = lin(hex);
+  for (let i = 0; i < n; i++) { c[i * 3] = col.r; c[i * 3 + 1] = col.g; c[i * 3 + 2] = col.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(c, 3)); return g;
+}
+function mergeGeos(list) {
+  let n = 0; for (const g of list) n += g.attributes.position.count;
+  const P = new Float32Array(n * 3), N = new Float32Array(n * 3), C = new Float32Array(n * 3); let o = 0;
+  for (const g of list) { P.set(g.attributes.position.array, o * 3); N.set(g.attributes.normal.array, o * 3); C.set(g.attributes.color.array, o * 3); o += g.attributes.position.count; }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(P, 3)); out.setAttribute('normal', new THREE.BufferAttribute(N, 3)); out.setAttribute('color', new THREE.BufferAttribute(C, 3));
+  out.computeBoundingSphere(); return out;
+}
+const M4 = (x, y, z, sx, sy, sz, rx, ry, rz) => new THREE.Matrix4().compose(new V3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx || 0, ry || 0, rz || 0)), new V3(sx, sy == null ? sx : sy, sz == null ? sx : sz));
+// one elephant is two geometries: the body with head, ears, trunk and face baked together, and one leg (drawn four times)
+function eleGeos(hex, earHex) {
+  const S = () => new THREE.SphereGeometry(1, 18, 12), parts = [];
+  parts.push(partGeo(S(), M4(0, 0.6, 0, 0.38, 0.33, 0.47), hex));                                   // body
+  parts.push(partGeo(S(), M4(0, 0.86, 0.46, 0.28, 0.27, 0.26), hex));                               // head
+  for (const s of [-1, 1]) {
+    parts.push(partGeo(S(), M4(s * 0.28, 0.86, 0.38, 0.05, 0.25, 0.21, 0, s * 0.4, 0), hex));       // ears
+    parts.push(partGeo(S(), M4(s * 0.3, 0.86, 0.41, 0.03, 0.18, 0.15, 0, s * 0.4, 0), earHex));     // pink inside
+    parts.push(partGeo(S(), M4(s * 0.12, 0.93, 0.69, 0.045), '#1e1a1c'));                            // eyes
+    parts.push(partGeo(S(), M4(s * 0.112, 0.945, 0.725, 0.014), '#ffffff'));                         // eye shine
+    parts.push(partGeo(S(), M4(s * 0.18, 0.8, 0.64, 0.055, 0.04, 0.03), '#f2a8b2'));                 // cheeks
+    parts.push(partGeo(new THREE.ConeGeometry(0.03, 0.14, 8), M4(s * 0.1, 0.7, 0.7, 1, 1, 1, 2.1, 0, 0), '#f4f0e6'));   // tusks
+  }
+  parts.push(partGeo(new THREE.CylinderGeometry(0.07, 0.11, 0.42, 12), M4(0, 0.6, 0.75, 1, 1, 1, 0.45, 0, 0), hex));   // trunk
+  parts.push(partGeo(S(), M4(0, 0.42, 0.85, 0.08, 0.06, 0.08), hex));                                // trunk tip
+  parts.push(partGeo(new THREE.CylinderGeometry(0.014, 0.02, 0.22, 6), M4(0, 0.6, -0.52, 1, 1, 1, -0.6, 0, 0), hex));   // tail
+  parts.push(partGeo(S(), M4(0, 0.51, -0.6, 0.035), '#55505a'));
+  const leg = mergeGeos([partGeo(new THREE.CylinderGeometry(0.11, 0.12, 0.4, 12), M4(0, -0.2, 0, 1), hex), partGeo(new THREE.CylinderGeometry(0.124, 0.124, 0.04, 12), M4(0, -0.4, 0, 1), '#e2ddd3')]);
+  return { body: mergeGeos(parts), leg };
+}
+const ELE_KINDS = [eleGeos('#a7b2c1', '#f0b6c0'), eleGeos('#9aa3ad', '#efb0ba'), eleGeos('#efc0cc', '#f7d9e0')];
+const eles = [];
+function eleOk(x, z) {
+  const dx = x - NS_C.x, dz = z - NS_C.z, r = Math.hypot(dx, dz);
+  let a = Math.atan2(dz, dx) - ELE_A; a = Math.atan2(Math.sin(a), Math.cos(a));
+  return r > 120 && r < 680 && Math.abs(a) < 1.2 && V.namsanSurf(x, z) > V.CLOUD_Y + 30 && Math.hypot(x - TOWER_XZ.x, z - TOWER_XZ.z) > 75;
+}
+function eleSpot() {
+  for (let k = 0; k < 80; k++) { const a = ELE_A + rand(-1.1, 1.1), r = rand(150, 600), x = NS_C.x + Math.cos(a) * r, z = NS_C.z + Math.sin(a) * r; if (eleOk(x, z)) return new V3(x, V.namsanSurf(x, z), z); }
+  const x = NS_C.x + Math.cos(ELE_A) * 300, z = NS_C.z + Math.sin(ELE_A) * 300; return new V3(x, V.namsanSurf(x, z), z);
+}
+for (let i = 0; i < ELE_N; i++) {
+  const K = ELE_KINDS[i === 2 ? 2 : i % 2], g = new THREE.Group();
+  g.add(new THREE.Mesh(K.body, eleMat));
+  const legs = [[-0.2, 0.25], [0.2, 0.25], [-0.2, -0.25], [0.2, -0.25]].map(([x, z]) => { const l = new THREE.Mesh(K.leg, eleMat); l.position.set(x, 0.42, z); g.add(l); return l; });
+  const sc = ELE_S * rand(0.85, 1.15), p = eleSpot(); g.position.copy(p); g.scale.setScalar(sc); scene.add(g);
+  eles.push({ g, legs, sc, h: rand(0, 6.28), sp: rand(5, 8), ph: rand(0, 6), turn: 0, state: 'walk', t: 0, vel: new V3(), spin: new V3(), back: 0 });
+}
+function stepElephants(dt) {
+  for (const e of eles) {
+    e.t += dt;
+    if (e.state === 'walk' || e.state === 'pop') {
+      if (e.state === 'pop') { const k = Math.min(1, e.t / 0.7); e.g.scale.setScalar(e.sc * (k < 1 ? 1 - Math.pow(1 - k, 3) * 1.0 + Math.sin(k * Math.PI) * 0.15 : 1)); if (k >= 1) { e.state = 'walk'; e.g.scale.setScalar(e.sc); } }
+      e.turn -= dt; if (e.turn < 0) { e.turn = rand(2, 6); e.dh = rand(-0.5, 0.5); }
+      e.h += (e.dh || 0) * dt;
+      const s = e.sp * dt, nx = e.g.position.x + Math.sin(e.h) * s, nz = e.g.position.z + Math.cos(e.h) * s;
+      let crowd = null;                                                // keep out of each other's way
+      for (const o of eles) if (o !== e && o.state !== 'gone' && Math.hypot(o.g.position.x - nx, o.g.position.z - nz) < (o.sc + e.sc) * 0.75 && Math.hypot(o.g.position.x - nx, o.g.position.z - nz) < Math.hypot(o.g.position.x - e.g.position.x, o.g.position.z - e.g.position.z)) crowd = o;
+      if (crowd) { e.h = Math.atan2(e.g.position.x - crowd.g.position.x, e.g.position.z - crowd.g.position.z) + rand(-0.5, 0.5); e.turn = rand(2, 4); e.dh = 0; }
+      else if (eleOk(nx, nz)) { e.g.position.x = nx; e.g.position.z = nz; }
+      else { const a = Math.atan2(NS_C.x + Math.cos(ELE_A) * 350 - e.g.position.x, NS_C.z + Math.sin(ELE_A) * 350 - e.g.position.z); e.h = a + rand(-0.6, 0.6); }   // turn back toward the middle of the slope
+      e.g.position.y = V.namsanSurf(e.g.position.x, e.g.position.z) - 1.5;
+      let d = e.h - e.g.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); e.g.rotation.y += d * Math.min(1, dt * 2);
+      e.ph += dt * e.sp * 0.32;
+      const sw = Math.sin(e.ph) * 0.42;
+      e.legs[0].rotation.x = sw; e.legs[3].rotation.x = sw; e.legs[1].rotation.x = -sw; e.legs[2].rotation.x = -sw;
+      e.g.children[0].position.y = Math.abs(Math.cos(e.ph)) * 0.025;
+    } else if (e.state === 'fly') {
+      e.vel.y -= 55 * dt; e.g.position.addScaledVector(e.vel, dt);
+      e.g.rotation.x += e.spin.x * dt; e.g.rotation.y += e.spin.y * dt; e.g.rotation.z += e.spin.z * dt;
+      if (e.t > 2.4) e.g.scale.setScalar(e.sc * Math.max(0.001, 1 - (e.t - 2.4) / 0.5));
+      if (e.t > 2.9) { e.state = 'gone'; e.g.visible = false; e.back = G.time + rand(4, 8); }
+    } else if (e.state === 'gone' && G.time > e.back) {
+      e.g.position.copy(eleSpot()); e.g.rotation.set(0, rand(0, 6.28), 0); e.h = e.g.rotation.y;
+      e.g.visible = true; e.g.scale.setScalar(0.001); e.state = 'pop'; e.t = 0;
+    }
+  }
+}
+const _ec = new V3();
+function hitElephants(p, R) {
+  for (const e of eles) {
+    if (e.state !== 'walk' && e.state !== 'pop') continue;
+    _ec.copy(e.g.position); _ec.y += e.sc * 0.6;
+    if (_ec.distanceTo(p) > R + e.sc * 0.55) continue;
+    e.state = 'fly'; e.t = 0;
+    _v2.subVectors(_ec, p); _v2.y = 0; if (_v2.lengthSq() < 1) _v2.set(rand(-1, 1), 0, rand(-1, 1)); _v2.normalize();
+    e.vel.copy(_v2).multiplyScalar(rand(30, 45)); e.vel.y = rand(75, 100); e.spin.set(rand(-3, 3), rand(-4, 4), rand(-3, 3));
+    popup('코끼리 명중!', _ec.clone().add(_v2.set(0, e.sc * 0.7, 0)), 'big');
+    G.eleHits = (G.eleHits || 0) + 1; sfxTrumpet();
+  }
+}
+// rays can stop on an elephant (a sphere around its body), so you can aim straight at one
+function rayEle(o, d, maxD) {
+  let best = maxD, hit = null;
+  for (const e of eles) {
+    if (e.state !== 'walk' && e.state !== 'pop') continue;
+    _ec.copy(e.g.position); _ec.y += e.sc * 0.6;
+    const r = e.sc * 0.5, ox = o.x - _ec.x, oy = o.y - _ec.y, oz = o.z - _ec.z, b = ox * d.x + oy * d.y + oz * d.z, c = ox * ox + oy * oy + oz * oz - r * r, disc = b * b - c;
+    if (disc < 0) continue;
+    const t = -b - Math.sqrt(disc); if (t > 0 && t < best) { best = t; hit = e; }
+  }
+  if (!hit) return null;
+  const p = new V3(o.x + d.x * best, o.y + d.y * best, o.z + d.z * best); p.ele = hit; return p;
+}
+// a short trumpet, a little indignant
+function sfxTrumpet() {
+  if (!voice(0.9, 1)) return;
+  const t = AC.currentTime + 0.02, out = place(null, false, rand(-0.5, -0.2)).node;
+  for (const [type, m, v, bp] of [['sawtooth', 1, 0.2, 1100], ['square', 2.01, 0.05, 2400]]) {
+    const o = osc(type, t, 0.85, 360 * m); o.frequency.linearRampToValueAtTime(700 * m, t + 0.12); o.frequency.linearRampToValueAtTime(600 * m, t + 0.55); o.frequency.linearRampToValueAtTime(400 * m, t + 0.8);
+    const vib = osc('sine', t, 0.85, 22), vg = AC.createGain(); vg.gain.value = 18 * m; vib.connect(vg); vg.connect(o.frequency);
+    chain(o, flt('bandpass', bp, 1.6), gEnv(t, v, 0.04, 0.55, 0.2), out);
+  }
+}
 
 // ------------------------------------------------------------------ round flow: menu → round (60 s) → result with ranking
 const MB_FREE = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
@@ -2348,15 +2665,17 @@ const MB_VIEW = Object.assign({}, controls.mouseButtons);
 function applyControlMode() {
   const id = curId();
   document.body.classList.toggle('armed', !!id && G.playing);
-  controls.touches.ONE = id && G.playing ? null : THREE.TOUCH.PAN;
-  controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
+  controls.touches.ONE = id && G.playing ? null : monk.on ? THREE.TOUCH.ROTATE : THREE.TOUCH.PAN;
+  controls.touches.TWO = monk.on ? THREE.TOUCH.DOLLY_ROTATE : THREE.TOUCH.DOLLY_PAN;
+  controls.enablePan = !monk.on;
   if (!G.playing) { controls.mouseButtons = MB_VIEW; return; }
   controls.mouseButtons = id ? MB_ARMED : MB_FREE;
 }
 function playControls(on) {
   controls.enabled = true; controls.autoRotate = !on; controls.autoRotateSpeed = 0.5;
   controls.screenSpacePanning = false;
-  if (on) { controls.minDistance = 25; controls.maxDistance = 900; controls.maxPolarAngle = Math.PI * 0.46; }
+  if (on && monk.on) { controls.minDistance = 5; controls.maxDistance = 70; controls.maxPolarAngle = Math.PI * 0.5; }
+  else if (on) { controls.minDistance = 25; controls.maxDistance = 900; controls.maxPolarAngle = Math.PI * 0.46; }
   applyControlMode();
 }
 const $start = $('#start'), $result = $('#result'), $rank = $('#rank');
@@ -2403,6 +2722,7 @@ function finish() {
   selectWeapon(-1, true);
   // a still of the wreckage, taken from where the player left the camera
   const c = grabView(); res.blob = null;
+  if (monk.on) setMonk(false, true);
   if (c) { brandShot(c, final); c.toBlob((b) => { res.blob = b; if (res.img) URL.revokeObjectURL(res.img); res.img = URL.createObjectURL(b); $('#shotImg').src = res.img; }, 'image/jpeg', 0.9); }
   G.playing = false;
   document.body.classList.remove('playing', 'armed'); document.body.classList.add('result');
@@ -2468,7 +2788,7 @@ loadBoard(false);
 let autoStart = false;
 try { autoStart = sessionStorage.getItem('campusSmashAuto') || false; sessionStorage.removeItem('campusSmashAuto'); } catch (e) {}
 
-function toggleMute() { muted = !muted; if (master) master.gain.value = muted ? 0 : 0.7; if (muted) for (const L of loops.slice()) stopLoop(L); $('#muteBtn').textContent = muted ? '🔇' : '🔊'; }
+function toggleMute() { muted = !muted; if (master) master.gain.value = muted ? 0 : MASTER_V; if (muted) for (const L of loops.slice()) stopLoop(L); $('#muteBtn').textContent = muted ? '🔇' : '🔊'; }
 $('#muteBtn').addEventListener('click', toggleMute);
 
 // ------------------------------------------------------------------ result picture and sharing
@@ -2629,7 +2949,7 @@ if (autoStart && RANK.me.name) setTimeout(() => start(autoStart), 60);
 function pre(dt) {
   G.time += dt; adaptBudget(dt);
   if (G.playing) { cameraStep(dt); aimStep(); handleFiring(dt); }
-  stepProjs(dt); stepBolts(dt); stepRails(dt); stepCollapse(dt); stepCrumble(dt);
+  stepProjs(dt); stepBolts(dt); stepRails(dt); stepCollapse(dt); stepCrumble(dt); stepElephants(dt);
   let moved = false;
   for (const S of structs) {
     if (S.geoDirty) { S.mesh.geometry.attributes.position.needsUpdate = true; S.geoDirty = false; moved = true; }
