@@ -2198,12 +2198,15 @@ const keys = {};
 let leftDown = false, aimP = null, fireAcc = 0, camTween = null;
 const TOUCH = matchMedia('(pointer: coarse)').matches;
 if (TOUCH) document.body.classList.add('touch');
-// the round opens from the north-east, the side that looks over the campus toward Namsan; tall phone screens back off further
-const START_T = new V3(CXc + 10, camGround(CXc, CZc), CZc - 6);
-// tall screens look from the south-east instead: from the north-east they would stare into the open notch in the fence line
-const START_TP = new V3(CXc - 25, camGround(CXc - 25, CZc - 10), CZc - 10);
+// every view looks across the campus toward N Seoul Tower (south-west), so Namsan and the tower stand behind the school.
+// The look-at point sits a little above the ground, which tilts the view up enough to keep the tower in the frame.
+const TOWER_XZ = new V3(-1040, 0, 780);
+const START_B = new V3(CXc + 5, camGround(CXc, CZc), CZc - 5), START_BP = new V3(-90, camGround(-90, 60), 60);   // tall screens: aimed past the main quad, so the camera stands just outside the fence rather than over the open notch
+const START_T = START_B.clone().add(new V3(0, 82, 0)), START_TP = START_BP.clone().add(new V3(0, 95, 0));
 const startTarget = () => innerWidth / innerHeight < 1 ? START_TP : START_T;
-// tall phone screens: a wider lens and a steeper look down, so the campus fills the screen instead of the sky
+// the camera stands back from a point on the ground; the view is aimed above that point (START_T), which tilts it up toward the tower
+function towardTower(B, back, up) { const d = new V3(TOWER_XZ.x - B.x, 0, TOWER_XZ.z - B.z).normalize(); return B.clone().addScaledVector(d, -back).add(new V3(0, up, 0)); }
+// tall phone screens: a wider lens, so the campus and the mountain behind it both fit
 function fitFov() {
   const a = innerWidth / innerHeight, f = a < 1 ? clamp(45 + (1 - a) * 22, 45, 58) : 45;
   if (Math.abs(camera.fov - f) > 0.01) { camera.fov = f; camera.updateProjectionMatrix(); updPScale(); }
@@ -2211,10 +2214,10 @@ function fitFov() {
 fitFov(); window.addEventListener('resize', () => setTimeout(fitFov, 0));
 function startView() {
   const a = innerWidth / innerHeight;
-  if (a < 1) { const k = clamp(0.62 / a, 1, 1.5); return START_TP.clone().add(new V3(120 * k, 400 * k, 150 * k)); }
-  return START_T.clone().add(new V3(250, 205, -205));
+  if (a < 1) return towardTower(START_BP, 360, 215);
+  return towardTower(START_B, 360, 175);
 }
-function menuView() { return START_T.clone().add(new V3(330, 120, -260)); }
+function menuView() { return towardTower(START_B, 420, 120); }
 function tweenCam(p, t, dur) { camTween = { p0: camera.position.clone(), t0: controls.target.clone(), p1: p.clone(), t1: t.clone(), s: G.time, d: dur }; }
 function cameraStep(dt) {
   if (camTween) {

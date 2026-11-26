@@ -130,7 +130,7 @@ renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;
 const ANISO = Math.min(8, renderer.capabilities.getMaxAnisotropy());
 const scene = new THREE.Scene();
 const HAZE = new THREE.Color(0.80, 0.87, 0.93);                      // the sky's horizon colour; fog is mixed in after tone mapping, so it matches 1:1
-scene.fog = new THREE.FogExp2(HAZE, 0.00055);
+scene.fog = new THREE.FogExp2(HAZE, 0.00034);   // light enough that Namsan and the tower, about 1.5 km off, stay clear
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 1, 6000);
 const controls = new THREE.OrbitControls(camera, canvas);
 controls.enableDamping = true; controls.dampingFactor = 0.08;
@@ -640,7 +640,7 @@ function buildNamsan() {
   scene.add(new THREE.Mesh(geo, mm));
   // N Seoul Tower: base building, tapering shaft, observation drum with its window band, striped antenna mast
   const g = new THREE.Group(), y0 = namsanH(TOWER.x, TOWER.z) - 2;
-  const conc = new THREE.MeshLambertMaterial({ color: lin('#e8e6e1') }), dark = new THREE.MeshLambertMaterial({ color: lin('#3a4552') }), red = new THREE.MeshLambertMaterial({ color: lin('#d23a2a') });
+  const conc = new THREE.MeshLambertMaterial({ color: lin('#f4f2ee'), emissive: lin('#3a3836') }), dark = new THREE.MeshLambertMaterial({ color: lin('#2e3a48'), emissive: lin('#1c2a3c') }), red = new THREE.MeshLambertMaterial({ color: lin('#e0402e'), emissive: lin('#4a1208') });
   const add = (geo, m, y) => { const o = new THREE.Mesh(geo, m); o.position.y = y; g.add(o); };
   add(new THREE.CylinderGeometry(15, 17, 10, 16), conc, 5);
   add(new THREE.CylinderGeometry(2.6, 4.6, 118, 16), conc, 69);
@@ -650,6 +650,8 @@ function buildNamsan() {
   add(new THREE.CylinderGeometry(6, 9, 4, 24), conc, 145);
   for (let k = 0; k < 6; k++) add(new THREE.CylinderGeometry(1.6 - k * 0.2, 1.8 - k * 0.2, 14, 10), k % 2 ? conc : red, 154 + k * 14);
   add(new THREE.CylinderGeometry(0.35, 0.6, 18, 6), conc, 245);
+  // drawn a little stouter than life: at 1.5 km the real shaft is a hairline, and the tower is how people know the place
+  g.scale.set(2.2, 1.12, 2.2);
   g.position.set(TOWER.x, y0, TOWER.z); g.name = 'tower'; scene.add(g);
 }
 function buildBackdrop() { buildCliffs(); buildClouds(); buildNamsan(); }
